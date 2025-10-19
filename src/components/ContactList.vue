@@ -28,7 +28,7 @@
     <div class="mt-auto pt-4 border-t border-gray-700">
       <Menu as="div" class="relative">
         <MenuButton class="w-full flex items-center justify-between p-2 rounded-md hover:bg-gray-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75">
-          <span class="font-semibold text-gray-800">{{ currentUser }}</span>
+          <span class="font-semibold text-white">{{ currentUser }}</span>
           <ChevronUpIcon class="h-5 w-5 text-gray-400" />
         </MenuButton>
 

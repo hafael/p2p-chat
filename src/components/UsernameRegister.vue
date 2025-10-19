@@ -20,7 +20,7 @@
       <button
         type="submit"
         :disabled="isLoading"
-        class="w-full flex items-center justify-center bg-cyan-600 hover:bg-cyan-700 text-gray-800 font-bold py-2 px-4 rounded-md transition duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-70"
+        class="w-full flex items-center justify-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-70"
       >
         <LoadingSpinner v-if="isLoading" size="sm" color="white" />
         <span v-else>Criar Identidade e Entrar</span>

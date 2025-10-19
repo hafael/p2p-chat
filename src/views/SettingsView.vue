@@ -15,15 +15,15 @@
         <h3 class="text-xl font-bold text-green-400 mb-2">1. Conectar a um Supernó</h3>
         <p class="text-sm text-gray-400 mb-4">Para encontrar contatos, cole o código de convite de um supernó.</p>
         
-        <textarea v-model="pastedSupernodeCode" class="input-base" placeholder="Cole o código de convite aqui..."></textarea>
-        <button @click="connectToSupernode" :disabled="networkStore.status === 'connecting'" class="btn-primary w-full mt-4">
+        <textarea v-model="pastedSupernodeCode" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 transition" placeholder="Cole o código de convite aqui..."></textarea>
+        <button @click="connectToSupernode" :disabled="networkStore.status === 'connecting'" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition w-full mt-4 disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed">
           {{ networkStore.status === 'connecting' ? 'Conectando...' : 'Conectar' }}
         </button>
 
         <div v-if="clientResponseCode" class="mt-4 p-3 bg-gray-900 rounded">
           <p class="text-sm text-yellow-300 font-bold">Ação Necessária:</p>
           <p class="text-sm text-gray-300 mt-1">Copie o código abaixo e envie de volta para o usuário do supernó.</p>
-          <textarea :value="clientResponseCode" @focus="$event.target.select()" readonly class="input-base mt-2 h-24"></textarea>
+          <textarea :value="clientResponseCode" @focus="$event.target.select()" readonly class="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 font-mono text-xs mt-2 h-24 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"></textarea>
         </div>
       </div>
 
@@ -31,20 +31,20 @@
         <h3 class="text-xl font-bold text-cyan-400 mb-2">2. Ser um Supernó</h3>
         <div class="flex items-center justify-between">
           <p class="text-sm text-gray-400">Ajudar outros usuários a se conectarem.</p>
-          <Switch v-model="isSupernodeEnabled" :class="isSupernodeEnabled ? 'bg-cyan-600' : 'bg-gray-600'" class="switch-base">
-            <span :class="isSupernodeEnabled ? 'translate-x-6' : 'translate-x-1'" class="switch-handle" />
+          <Switch v-model="isSupernodeEnabled" :class="isSupernodeEnabled ? 'bg-cyan-600' : 'bg-gray-600'" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors">
+            <span :class="isSupernodeEnabled ? 'translate-x-6' : 'translate-x-1'" class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
           </Switch>
         </div>
 
         <div v-if="isSupernodeEnabled" class="mt-4 space-y-4">
           <div>
             <p class="text-sm font-bold text-gray-300">Passo A: Compartilhe seu código de convite</p>
-            <textarea :value="mySupernodeCode" @focus="$event.target.select()" readonly class="input-base mt-2 h-24"></textarea>
+            <textarea :value="mySupernodeCode" @focus="$event.target.select()" readonly class="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 font-mono text-xs mt-2 h-24 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"></textarea>
           </div>
           <div>
             <p class="text-sm font-bold text-gray-300">Passo B: Cole a resposta do cliente</p>
-            <textarea v-model="pastedClientResponse" class="input-base mt-2" placeholder="Cole a resposta do cliente aqui..."></textarea>
-            <button @click="acceptClient" class="btn-secondary w-full mt-4">Aceitar Cliente</button>
+            <textarea v-model="pastedClientResponse" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 font-mono text-xs mt-2" placeholder="Cole a resposta do cliente aqui..."></textarea>
+            <button @click="acceptClient" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md transition w-full mt-4 disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed">Aceitar Cliente</button>
           </div>
         </div>
       </div>
@@ -55,10 +55,6 @@
     </footer>
   </div>
 </template>
-
-<style>
-/* ... (classes base existentes) ... */
-</style>
 
 <script setup>
   import { ref, computed } from 'vue';
