@@ -2,11 +2,14 @@
 import { useNetworkStore } from '../stores/network';
 import { createLibp2p } from 'libp2p';
 import { webRTC } from '@libp2p/webrtc';
+import { webSockets } from '@libp2p/websockets';
 import { noise } from '@chainsafe/libp2p-noise';
 import { mplex } from '@libp2p/mplex';
-import { bootstrap } from '@libp2p/bootstrap';
 import { gossipsub } from '@libp2p/gossipsub';
-import { kadDHT } from '@libp2p/kad-dht'; // <-- Importar o módulo da DHT
+import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
+import { identify } from '@libp2p/identify';
+import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
+import { dcutr } from '@libp2p/dcutr';
 import { fromString as uint8ArrayFromString, toString as uint8ArrayToString } from 'uint8arrays';
 import { pipe } from 'it-pipe';
 
@@ -20,10 +23,10 @@ const chatStreams = new Map();
 
 // --- Configuração do libp2p ---
 const bootstrapNodes = [
-  '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
-  '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTf5zyDhrS3Saz8KVK',
-  '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
-  '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcXoagJQ'
+  '/dns4/bootstrap.libp2p.io/tcp/443/wss/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
+  '/dns4/bootstrap.libp2p.io/tcp/443/wss/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTf5zyDhrS3Saz8KVK',
+  '/dns4/bootstrap.libp2p.io/tcp/443/wss/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
+  '/dns4/bootstrap.libp2p.io/tcp/443/wss/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcXoagJQ'
 ];
 const CHAT_PROTOCOL = '/p2p-chat-seguro/1.0.0';
 const DISCOVERY_TOPIC = 'p2p-chat-discovery-topic-2025-v2';
@@ -41,22 +44,31 @@ export async function initialize(identity) {
 
   try {
     libp2pNode = await createLibp2p({
-      transports: [webRTC()],
+      transports: [
+        webSockets(),
+        webRTC(),
+        circuitRelayTransport({
+          discoverRelays: 1 // Tenta descobrir pelo menos 1 relay na rede
+        })
+      ],
       connectionEncryption: [noise()],
       streamMuxers: [mplex()],
-      peerDiscovery: [bootstrap({ list: bootstrapNodes })],
+      peerDiscovery: [
+        pubsubPeerDiscovery({
+          interval: 1000, // Procura por novos peers a cada segundo
+          topics: [DISCOVERY_TOPIC]
+        })
+      ],
       services: {
-        dht: kadDHT({
-          protocol: '/ipfs/kad/1.0.0',
-          clientMode: true // Importante para nós de navegador
-        }),
-        pubsub: gossipsub({ allowPublishToZeroPeers: true })
+        identify: identify(),
+        pubsub: gossipsub({ allowPublishToZeroPeers: true, emitSelf: true }),
+        dcutr: dcutr()
       }
     });
 
     await libp2pNode.start();
     networkStore._setConnectionStatus('connected');
-    console.log('[NetworkService] Nó DHT iniciado. PeerId:', libp2pNode.peerId.toString());
+    console.log('[NetworkService] Nó libp2p iniciado com PubSub Discovery. PeerId:', libp2pNode.peerId.toString());
 
     await libp2pNode.handle(CHAT_PROTOCOL, ({ stream }) => {
       const peerId = stream.remotePeer.toString();
@@ -83,7 +95,7 @@ export async function initialize(identity) {
     
     // Anuncia a nossa presença na rede periodicamente
     setInterval(() => {
-      if (libp2pNode && libp2pNode.isStarted()) {
+      if (libp2pNode && libp2pNode.status === 'started') {
         const presenceMessage = JSON.stringify({
           type: 'user-presence',
           peerId: libp2pNode.peerId.toString(),
@@ -95,7 +107,7 @@ export async function initialize(identity) {
     
     // Anúncio inicial após um breve atraso
     setTimeout(() => {
-        if (libp2pNode && libp2pNode.isStarted()) {
+        if (libp2pNode && libp2pNode.status === 'started') {
             const presenceMessage = JSON.stringify({
                 type: 'user-presence',
                 peerId: libp2pNode.peerId.toString(),
@@ -106,7 +118,7 @@ export async function initialize(identity) {
     }, 2000);
 
   } catch (err) {
-    console.error("[NetworkService] Falha ao iniciar o nó DHT:", err);
+    console.error("[NetworkService] Falha ao iniciar o nó libp2p:", err);
     networkStore._setConnectionStatus('disconnected');
   }
 }
