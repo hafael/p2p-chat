@@ -1,28 +1,24 @@
 <template>
   <div class="flex flex-col h-full bg-gray-800 p-4">
-    <h2 class="text-xl font-bold text-cyan-400 mb-4">Chat P2P Seguro</h2>
+    <h2 class="text-xl font-bold text-cyan-400 mb-4">Contatos Online</h2>
     
-    <div class="flex-1 text-gray-500 text-sm">
-      
-      <div v-if="isLoading" class="flex-1 flex items-center justify-center">
-          <LoadingSpinner />
-      </div>
+    <div v-if="isLoading" class="flex-1 flex items-center justify-center">
+        <LoadingSpinner />
+    </div>
 
-      <ul v-else-if="availableUsers.length > 0" class="flex-1 overflow-y-auto">
-        <li
-          v-for="user in availableUsers"
-          :key="user"
-          @click="selectContact(user)"
-          class="p-2 rounded-md hover:bg-gray-700 cursor-pointer transition"
-          :class="{ 'bg-cyan-800 text-white': user === selectedContact }"
-        >
-          {{ user }}
-        </li>
-      </ul>
-      <div v-else class="flex-1 text-gray-500 text-sm">
-        <p>Nenhum outro usuário online. Conecte-se a um supernó ou ative o seu próprio modo em "Configurações".</p>
-      </div>
-    
+    <ul v-else-if="availableUsers.length > 0" class="flex-1 overflow-y-auto">
+      <li
+        v-for="user in availableUsers"
+        :key="user"
+        @click="selectContact(user)"
+        class="p-2 rounded-md hover:bg-gray-700 cursor-pointer transition"
+        :class="{ 'bg-cyan-800 text-white': user === selectedContact }"
+      >
+        {{ user }}
+      </li>
+    </ul>
+    <div v-else class="flex-1 text-gray-500 text-sm p-2">
+      <p>Nenhum outro usuário online. Vá para as "Configurações" para se conectar à rede.</p>
     </div>
 
     <div class="mt-auto pt-4 border-t border-gray-700">
@@ -60,7 +56,7 @@
                 <button
                   @click="emit('logout')"
                   :class="[
-                    active ? 'bg-red-600 text-white' : 'text-gray-600',
+                    active ? 'bg-red-600 text-white' : 'text-gray-200',
                     'group flex w-full items-center rounded-md px-2 py-2 text-sm',
                   ]"
                 >
@@ -85,7 +81,8 @@
   const props = defineProps({
     onlineUsers: {
       type: Array,
-      required: true
+      // CORREÇÃO: Adiciona um valor padrão para garantir que seja sempre um array.
+      default: () => [],
     },
     currentUser: {
       type: String,
@@ -110,4 +107,4 @@
   const selectContact = (username) => {
     emit('selectContact', username);
   };
-  </script>
+</script>

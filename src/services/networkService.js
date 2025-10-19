@@ -16,6 +16,12 @@ let upstreamConnection = null;
 // Estrutura: Map<username, { peer: Peer.Instance, sharedKey: Uint8Array | null }>
 const chatPeers = new Map();
 
+// --- Lógica de Conexão com Failover ---
+let knownSupernodesCache = [];
+let currentSupernodeIndex = -1;
+let isAttemptingConnection = false;
+
+
 /**
  * Inicializa o serviço de rede com a identidade do usuário.
  */
@@ -76,18 +82,18 @@ function createNewHostPeer() {
  * Aceita a resposta de um cliente e finaliza a conexão P2P com ele.
  */
 export function acceptClientConnection(responseCode) {
-  const pendingPeerEntry = Array.from(hostPeers.entries()).find(([, p]) => !p.peer.connected);
-  if (!pendingPeerEntry) return console.error('[Supernó] Nenhum peer aguardando conexão.');
-  
-  const peer = pendingPeerEntry[1].peer;
-  try {
-    const answer = JSON.parse(atob(responseCode));
-    peer.signal(answer);
-    // Após aceitar, gera um novo código para o próximo cliente
-    createNewHostPeer();
-  } catch (err) {
-    console.error('[Supernó] Código de resposta do cliente inválido:', err);
-  }
+    const pendingPeerEntry = Array.from(hostPeers.entries()).find(([, p]) => !p.peer.connected);
+    if (!pendingPeerEntry) return console.error('[Supernó] Nenhum peer aguardando conexão.');
+    
+    const peer = pendingPeerEntry[1].peer;
+    try {
+      const answer = JSON.parse(atob(responseCode));
+      peer.signal(answer);
+      // Após aceitar, gera um novo código para o próximo cliente
+      createNewHostPeer();
+    } catch (err) {
+      console.error('[Supernó] Código de resposta do cliente inválido:', err);
+    }
 }
 
 /**
@@ -147,18 +153,54 @@ export function disableSupernodeMode() {
 }
 
 
-// --- LÓGICA DO MODO CLIENTE ---
+// --- LÓGICA DO MODO CLIENTE (COM FAILOVER) ---
 
 /**
- * Conecta-se a um supernó usando um código de convite.
+ * Inicia o processo de conexão à rede, iterando sobre a lista de supernós conhecidos.
+ * @param {Array} supernodes - A lista de supernós do store.
  */
-export function connectToSupernode(inviteCode) {
-  const networkStore = useNetworkStore();
-  if (upstreamConnection) upstreamConnection.destroy();
+export function connectToNetwork(supernodes) {
+  if (isAttemptingConnection || (upstreamConnection && upstreamConnection.connected)) {
+    return; // Já conectado ou a tentar conectar
+  }
   
+  console.log('[Cliente] Iniciando ciclo de conexão à rede...');
+  knownSupernodesCache = supernodes;
+  currentSupernodeIndex = -1; // Começa do início
+  tryNextSupernode();
+}
+
+/**
+ * Tenta conectar-se ao próximo supernó disponível na lista.
+ */
+function tryNextSupernode() {
+  const networkStore = useNetworkStore();
+  currentSupernodeIndex++;
+
+  if (currentSupernodeIndex >= knownSupernodesCache.length) {
+    console.log('[Cliente] Tentou todos os supernós conhecidos. Nenhuma conexão estabelecida.');
+    networkStore._setConnectionStatus('disconnected');
+    isAttemptingConnection = false;
+    return;
+  }
+
+  isAttemptingConnection = true;
+  networkStore._setConnectionStatus('connecting');
+  
+  const node = knownSupernodesCache[currentSupernodeIndex];
+  console.log(`[Cliente] Tentando conectar ao supernó #${currentSupernodeIndex + 1}...`);
+
   try {
-    const offer = JSON.parse(atob(inviteCode));
+    const offer = JSON.parse(atob(node.code));
+    
+    if (upstreamConnection) upstreamConnection.destroy();
+    
     upstreamConnection = createPeer(false);
+
+    const connectionTimeout = setTimeout(() => {
+      console.warn(`[Cliente] Timeout ao conectar com o supernó #${currentSupernodeIndex + 1}.`);
+      upstreamConnection.destroy();
+    }, 15000);
 
     upstreamConnection.on('signal', (answer) => {
       const responseCode = btoa(JSON.stringify(answer));
@@ -166,29 +208,49 @@ export function connectToSupernode(inviteCode) {
     });
 
     upstreamConnection.on('connect', () => {
-      console.log('[Cliente] Conectado ao supernó com sucesso!');
+      clearTimeout(connectionTimeout);
+      console.log(`[Cliente] Conectado ao supernó #${currentSupernodeIndex + 1} com sucesso!`);
+      isAttemptingConnection = false;
+      networkStore.activeSupernodeIndex = currentSupernodeIndex;
       networkStore._setConnectionStatus('connected');
-      networkStore._setClientResponseCode('');
       upstreamConnection.send(JSON.stringify({ type: 'identify', username: localIdentity.username }));
     });
 
     upstreamConnection.on('data', (data) => handleUpstreamData(JSON.parse(data.toString())));
     
     upstreamConnection.on('close', () => {
-      networkStore._setConnectionStatus('disconnected');
-      networkStore._updateOnlineUsers([]);
+      clearTimeout(connectionTimeout);
+      console.log(`[Cliente] Conexão com o supernó #${currentSupernodeIndex + 1} fechada.`);
+      if (!isAttemptingConnection) {
+        tryNextSupernode();
+      }
     });
 
     upstreamConnection.on('error', (err) => {
-      console.error('[Cliente] Erro na conexão com supernó:', err);
-      networkStore._setConnectionStatus('disconnected');
+      clearTimeout(connectionTimeout);
+      console.error(`[Cliente] Erro na conexão com o supernó #${currentSupernodeIndex + 1}:`, err);
     });
 
     upstreamConnection.signal(offer);
   } catch (err) {
-    console.error('[Cliente] Código de convite inválido:', err);
-    networkStore._setConnectionStatus('disconnected');
+    console.error(`[Cliente] Código de convite do supernó #${currentSupernodeIndex + 1} é inválido.`, err);
+    tryNextSupernode();
   }
+}
+
+/**
+ * Desconecta do supernó atual.
+ */
+export function disconnectFromUpstream() {
+    if (upstreamConnection) {
+        upstreamConnection.destroy();
+        upstreamConnection = null;
+    }
+    isAttemptingConnection = false;
+    currentSupernodeIndex = -1;
+    const networkStore = useNetworkStore();
+    networkStore._setConnectionStatus('disconnected');
+    networkStore._updateOnlineUsers([]);
 }
 
 /**
@@ -242,7 +304,6 @@ export function startChatSession(targetUsername) {
   const peer = createPeer(true); // O iniciador do chat
 
   peer.on('signal', (signal) => {
-    // Envia o sinal de oferta através do supernó
     sendUpstream({ type: 'chat-offer', to: targetUsername, signal });
   });
 
@@ -273,7 +334,7 @@ function setupChatPeerEvents(username, peer) {
       networkStore._setChatFingerprint(username, fingerprint);
 
       const keys = await deriveSharedKey(localIdentity.privateKey, theirPublicKey);
-      if(peerData) peerData.sharedKey = keys.sharedTx; // Armazena a chave de sessão
+      if(peerData) peerData.sharedKey = keys.sharedTx;
 
       networkStore._setChatStatus(username, 'connected');
 
@@ -284,11 +345,15 @@ function setupChatPeerEvents(username, peer) {
     }
     
     if (message.type === 'chat' && peerData?.sharedKey) {
-      const ciphertext = new Uint8Array(message.ciphertext);
-      const nonce = new Uint8Array(message.nonce);
-      const decryptedText = await decryptMessage(ciphertext, nonce, peerData.sharedKey);
-      if (decryptedText !== null) {
-        networkStore._addMessageToChat(username, { text: decryptedText, sender: 'them' });
+      try {
+        const ciphertext = new Uint8Array(message.ciphertext);
+        const nonce = new Uint8Array(message.nonce);
+        const decryptedText = await decryptMessage(ciphertext, nonce, peerData.sharedKey);
+        if (decryptedText !== null) {
+          networkStore._addMessageToChat(username, { text: decryptedText, sender: 'them' });
+        }
+      } catch (error) {
+        console.error("Erro ao processar mensagem recebida:", error);
       }
     }
   });

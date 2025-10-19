@@ -14,7 +14,7 @@
       <div class="bg-gray-800 p-6 rounded-lg">
         <h3 class="text-xl font-bold text-green-400 mb-2">1. Conectar a um Supernó</h3>
         <p class="text-sm text-gray-400 mb-4">Para encontrar contatos, cole o código de convite de um supernó.</p>
-        
+
         <textarea v-model="pastedSupernodeCode" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 transition" placeholder="Cole o código de convite aqui..."></textarea>
         <button @click="connectToSupernode" :disabled="networkStore.status === 'connecting'" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition w-full mt-4 disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed">
           {{ networkStore.status === 'connecting' ? 'Conectando...' : 'Conectar' }}
