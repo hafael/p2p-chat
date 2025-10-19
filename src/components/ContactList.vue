@@ -1,8 +1,28 @@
 <template>
   <div class="flex flex-col h-full bg-gray-800 p-4">
     <h2 class="text-xl font-bold text-cyan-400 mb-4">Chat P2P Seguro</h2>
+    
     <div class="flex-1 text-gray-500 text-sm">
-      <p>A descoberta automática de contatos será implementada em futuras versões.</p>
+      
+      <div v-if="isLoading" class="flex-1 flex items-center justify-center">
+          <LoadingSpinner />
+      </div>
+
+      <ul v-else-if="availableUsers.length > 0" class="flex-1 overflow-y-auto">
+        <li
+          v-for="user in availableUsers"
+          :key="user"
+          @click="selectContact(user)"
+          class="p-2 rounded-md hover:bg-gray-700 cursor-pointer transition"
+          :class="{ 'bg-cyan-800 text-white': user === selectedContact }"
+        >
+          {{ user }}
+        </li>
+      </ul>
+      <div v-else class="flex-1 text-gray-500 text-sm">
+        <p>Nenhum outro usuário online. Conecte-se a um supernó ou ative o seu próprio modo em "Configurações".</p>
+      </div>
+    
     </div>
 
     <div class="mt-auto pt-4 border-t border-gray-700">
@@ -60,6 +80,7 @@
   import { computed } from 'vue';
   import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/vue';
   import { ChevronUpIcon, Cog6ToothIcon, ArrowRightOnRectangleIcon } from '@heroicons/vue/24/solid';
+  import LoadingSpinner from './LoadingSpinner.vue';
   
   const props = defineProps({
     onlineUsers: {

@@ -2,9 +2,9 @@
   <div class="flex h-screen w-full bg-gray-800 text-white">
     <aside class="w-1/4">
       <ContactList
-        :online-users="[]"
+        :online-users="onlineUsers"
         :current-user="username"
-        :is-loading="false"
+        :is-loading="isLoadingUsers"
         @logout="handleLogout"
       />
     </aside>
@@ -105,6 +105,10 @@ const isConnecting = ref(false);
 let peer = null;
 let sharedKey = ref(null);
 
+// Crie uma computed property para a lista de usuários
+const onlineUsers = computed(() => networkStore.onlineUsers);
+// Crie um estado para o carregamento da lista
+const isLoadingUsers = computed(() => networkStore.status === 'connecting' && networkStore.onlineUsers.length === 0);
 
 // --- Lifecycle Hooks ---
 onMounted(async () => {
