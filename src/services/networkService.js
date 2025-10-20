@@ -9,7 +9,6 @@ import { noise } from '@chainsafe/libp2p-noise';
 import { gossipsub } from '@libp2p/gossipsub';
 import { webRTC } from '@libp2p/webrtc';
 import { webSockets } from '@libp2p/websockets';
-import { all } from '@libp2p/websockets/filters';
 import { fromString as uint8ArrayFromString, toString as uint8ArrayToString } from 'uint8arrays';
 import { pipe } from 'it-pipe';
 import { multiaddr } from '@multiformats/multiaddr';
@@ -57,9 +56,7 @@ export async function initialize(identity) {
       },
       transports: [
         // WebSockets with a filter to only connect to public bootstrap nodes
-        webSockets({
-          filter: all
-        }),
+        webSockets(),
         webRTC(),
         // Circuit relay is essential for NAT traversal.
         circuitRelayTransport({
