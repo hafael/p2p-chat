@@ -20,6 +20,13 @@ import { useNetworkStore } from '../stores/network';
 // A known, public WebRTC relay node. This is the crucial part for browser connectivity.
 const RELAY_NODE = '/ip4/159.223.189.83/udp/4001/webrtc-direct/certhash/uEiAIc3s_eros01-k5FfA6nI7smf3Eygz0rG22pB52r93zQ';
 
+const BOOTSTRAP_NODES = [
+  '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
+  '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
+  '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
+  '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt'
+];
+
 // PubSub topic for broadcasting user presence (online/offline status).
 const PRESENCE_TOPIC = '/secure-p2p-chat/presence/1.0.0';
 
@@ -60,7 +67,7 @@ export async function initialize(identity) {
         webRTC(),
         // Circuit relay is essential for NAT traversal.
         circuitRelayTransport({
-          discoverRelays: 1, // We will also use a hardcoded relay
+          discoverRelays: 2, // We will also use a hardcoded relay
         }),
       ],
       connectionEncryption: [noise()],
@@ -69,7 +76,7 @@ export async function initialize(identity) {
         bootstrap({
           list: [
             // Add the public relay to the bootstrap list
-            RELAY_NODE,
+            BOOTSTRAP_NODES,
           ],
         }),
       ],
@@ -88,8 +95,8 @@ export async function initialize(identity) {
     console.log('[NetworkService] Libp2p node started with PeerId:', libp2pNode.peerId.toString());
 
     // Dial the public relay to establish a connection and get a listenable address
-    console.log(`[NetworkService] Dialing public relay: ${RELAY_NODE}`);
-    await libp2pNode.dial(multiaddr(RELAY_NODE));
+    //console.log(`[NetworkService] Dialing public relay: ${RELAY_NODE}`);
+    //await libp2pNode.dial(multiaddr(RELAY_NODE));
 
     // Log all listening addresses, including relayed ones.
     console.log('[NetworkService] Listening on addresses:');
