@@ -1,249 +1,415 @@
 // src/services/networkService.js
-import { useNetworkStore } from '../stores/network';
 import { createLibp2p } from 'libp2p';
+import { bootstrap } from '@libp2p/bootstrap';
+import { circuitRelayTransport, circuitRelayServer } from '@libp2p/circuit-relay-v2';
+import { dcutr } from '@libp2p/dcutr';
+import { identify } from '@libp2p/identify';
+import { mplex } from '@libp2p/mplex';
+import { noise } from '@chainsafe/libp2p-noise';
+import { gossipsub } from '@libp2p/gossipsub';
 import { webRTC } from '@libp2p/webrtc';
 import { webSockets } from '@libp2p/websockets';
-import { noise } from '@chainsafe/libp2p-noise';
-import { mplex } from '@libp2p/mplex';
-import { gossipsub } from '@libp2p/gossipsub';
-import { bootstrap } from '@libp2p/bootstrap';
-import { kadDHT } from '@libp2p/kad-dht';
-import { identify } from '@libp2p/identify';
-import { ping } from '@libp2p/ping';
-import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
-import { dcutr } from '@libp2p/dcutr';
-import { autoNAT } from '@libp2p/autonat';
+import { all } from '@libp2p/websockets/filters';
 import { fromString as uint8ArrayFromString, toString as uint8ArrayToString } from 'uint8arrays';
 import { pipe } from 'it-pipe';
+import { multiaddr } from '@multiformats/multiaddr';
 
-// Crypto services for the chat
-import { deriveSharedKey, encryptMessage, decryptMessage, generateFingerprint } from './crypto';
+import { useNetworkStore } from '../stores/network';
 
-// --- Internal Service State ---
-let localIdentity = null;
+// --- Constants ---
+
+// A known, public WebRTC relay node. This is the crucial part for browser connectivity.
+const RELAY_NODE = '/ip4/159.223.189.83/udp/4001/webrtc-direct/certhash/uEiAIc3s_eros01-k5FfA6nI7smf3Eygz0rG22pB52r93zQ';
+
+// PubSub topic for broadcasting user presence (online/offline status).
+const PRESENCE_TOPIC = '/secure-p2p-chat/presence/1.0.0';
+
+// Protocol ID for direct, one-to-one chat streams.
+const DIRECT_CHAT_PROTOCOL = '/secure-p2p-chat/direct/1.0.0';
+
+// --- Internal State ---
 let libp2pNode = null;
-const chatStreams = new Map();
+let localIdentity = null;
+const directChatStreams = new Map(); // Stores active direct chat streams: { peerId: Stream }
 
-// --- Libp2p Config ---
-const bootstrapNodes = [
-  "/ip4/104.131.131.82/tcp/4001/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-        "/dnsaddr/bootstrap.libp2p.io/ipfs/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-        "/dnsaddr/bootstrap.libp2p.io/ipfs/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-];
-const CHAT_PROTOCOL = '/secure-p2p-chat/1.0.0';
-const DISCOVERY_TOPIC = 'p2p-chat-discovery-topic-2025-v2';
+// --- Core Network Functions ---
 
 /**
- * Initializes the network service and the libp2p node.
+ * Initializes the libp2p node, sets up services, and connects to the network.
+ * @param {object} identity - The user's identity { username }.
  */
 export async function initialize(identity) {
-  if (libp2pNode) return;
+  if (libp2pNode) {
+    console.warn('[NetworkService] Node is already initialized.');
+    return;
+  }
   localIdentity = identity;
-  console.log(`[NetworkService] Initializing for: ${identity.username}`);
-  
   const networkStore = useNetworkStore();
   networkStore._setConnectionStatus('connecting');
 
   try {
     libp2pNode = await createLibp2p({
+      // Addresses to listen on.
+      addresses: {
+        listen: [
+          '/webrtc', // Listen for WebRTC connections
+        ],
+      },
       transports: [
-        webSockets(),
+        // WebSockets with a filter to only connect to public bootstrap nodes
+        webSockets({
+          filter: all
+        }),
         webRTC(),
-        // This transport is essential for NAT traversal.
-        // It allows us to connect to peers through a relay.
+        // Circuit relay is essential for NAT traversal.
         circuitRelayTransport({
-          discoverRelays: 2 // Discover and use up to 2 relays
-        })
+          discoverRelays: 1, // We will also use a hardcoded relay
+        }),
       ],
       connectionEncryption: [noise()],
       streamMuxers: [mplex()],
       peerDiscovery: [
         bootstrap({
-          list: bootstrapNodes
-        })
+          list: [
+            // Add the public relay to the bootstrap list
+            RELAY_NODE,
+          ],
+        }),
       ],
       services: {
-        identify: identify({
-          protocolPrefix: 'libp2p', // Ensure the identify protocol is properly configured
-        }),
-        dht: kadDHT({
-          clientMode: true, // A browser node must be a client
-        }),
-        autoNAT: autoNAT(), // Helps the node understand its network condition
-        dcutr: dcutr(), // Helps upgrade relayed connections to direct ones
-        ping: ping(),
-        pubsub: gossipsub({ 
-          // allowPublishToZeroPeers: true, 
-          // emitSelf: false 
-        }),
-      }
+        identify: identify(),
+        // dcutr allows upgrading a relayed connection to a direct one.
+        dcutr: dcutr(),
+        pubsub: gossipsub({ allowPublishToZeroPeers: true, canRelayMessage: true }),
+      },
     });
 
-    // Add diagnostic listeners
-    libp2pNode.addEventListener('peer:discovery', (evt) => {
-      console.log(`[Diagnostic] Discovered peer: ${evt.detail.id.toString()}`);
-    });
-    libp2pNode.addEventListener('peer:connect', (evt) => {
-      console.log(`[Diagnostic] Connected to peer: ${evt.detail.toString()}`);
-    });
-    libp2pNode.addEventListener('peer:disconnect', (evt) => {
-        console.log(`[Diagnostic] Disconnected from peer: ${evt.detail.toString()}`);
-    });
+    // Set up handlers for incoming connections and messages
+    setupNodeListeners();
 
     await libp2pNode.start();
-    networkStore._setConnectionStatus('connected');
-    console.log('[NetworkService] Libp2p node started. PeerId:', libp2pNode.peerId.toString());
+    console.log('[NetworkService] Libp2p node started with PeerId:', libp2pNode.peerId.toString());
 
-    // Log all addresses, including relayed ones
+    // Dial the public relay to establish a connection and get a listenable address
+    console.log(`[NetworkService] Dialing public relay: ${RELAY_NODE}`);
+    await libp2pNode.dial(multiaddr(RELAY_NODE));
+
+    // Log all listening addresses, including relayed ones.
     console.log('[NetworkService] Listening on addresses:');
     libp2pNode.getMultiaddrs().forEach(addr => console.log(addr.toString()));
 
-    await libp2pNode.handle(CHAT_PROTOCOL, ({ stream }) => {
-      const peerId = stream.remotePeer.toString();
-      console.log(`[NetworkService] Received new chat connection from: ${peerId}`);
-      setupChatStreamEvents(peerId, stream, false);
-    });
+    networkStore._setConnectionStatus('connected');
+    networkStore._setPeerId(libp2pNode.peerId.toString());
 
-    // Subscribe to the discovery topic
-    libp2pNode.services.pubsub.subscribe(DISCOVERY_TOPIC);
-    libp2pNode.services.pubsub.addEventListener('message', (evt) => {
-      console.log('received pubsub message on topic:', evt.detail.topic);
-      try {
-        if (evt.detail.topic !== DISCOVERY_TOPIC) return;
-        
-        const message = JSON.parse(uint8ArrayToString(evt.detail.data));
-        if (message.peerId === libp2pNode.peerId.toString()) return;
-
-        if (message.type === 'user-presence') {
-          const networkStore = useNetworkStore();
-          const currentUsers = networkStore.onlineUsers;
-          if (!currentUsers.some(u => u.id === message.peerId)) {
-            const newUser = { id: message.peerId, username: message.username };
-            console.log(`[NetworkService] User presence received: ${newUser.username}`);
-            networkStore._updateOnlineUsers([...currentUsers, newUser]);
-          }
-        }
-      } catch (e) {
-        console.warn("Received malformed discovery message:", e);
-      }
-    });
+    // Subscribe to the presence topic to see who is online
+    libp2pNode.services.pubsub.subscribe(PRESENCE_TOPIC);
     
-    // Announce our presence on the network periodically
-    const announcePresence = async () => {
-      console.log('[NetworkService] Announcing presence on the network...');
-      if (libp2pNode?.status !== 'started') return;
+    // Announce our presence to the network
+    setInterval(announcePresence, 20000); // Announce every 20 seconds
+    setTimeout(announcePresence, 2000); // Announce quickly after startup
 
-      const peersSubscribed = libp2pNode.services.pubsub.getSubscribers(DISCOVERY_TOPIC);
-      if (!peersSubscribed) {
-        console.warn('[NetworkService] No peers subscribed to the discovery topic. Announcing presence anyway.');
-      }
-
-      const presenceMessage = JSON.stringify({
-        type: 'user-presence',
-        peerId: libp2pNode.peerId.toString(),
-        username: localIdentity.username,
-      });
-      
-      try {
-        await libp2pNode.services.pubsub.publish(DISCOVERY_TOPIC, uint8ArrayFromString(presenceMessage));
-      } catch (err) {
-        console.warn(`[NetworkService] Could not publish presence: ${err.message}`);
-      }
-    };
-
-    setInterval(announcePresence, 15000);
-    setTimeout(announcePresence, 5000);
-
-  } catch (err) {
-    console.error("[NetworkService] Failed to start libp2p node:", err);
+  } catch (error) {
+    console.error('[NetworkService] Failed to initialize libp2p node:', error);
     networkStore._setConnectionStatus('disconnected');
   }
 }
 
-// ... the rest of the file remains the same ...
+/**
+ * Sets up the global event listeners for the libp2p node for debugging and functionality.
+ */
+function setupNodeListeners() {
+    // Fired when the node discovers a new peer. Should fire frequently.
+    libp2pNode.addEventListener('peer:discovery', (evt) => {
+        const peerId = evt.detail.id.toString();
+        console.log(`[NetworkService] Discovered peer: ${peerId}`);
+    });
 
-export async function startChatSession(targetPeerId) {
+    // Fired when a connection is successfully established. This should now fire.
+    libp2pNode.addEventListener('peer:connect', (evt) => {
+        const peerId = evt.detail.toString();
+        console.log(`✅ [NetworkService] Peer connected: ${peerId}`);
+        // Announce presence so the new peer sees us immediately.
+        setTimeout(announcePresence, 500); 
+    });
+
+    // Fired when a peer disconnects.
+    libp2pNode.addEventListener('peer:disconnect', (evt) => {
+        const peerId = evt.detail.toString();
+        console.log(`❌ [NetworkService] Peer disconnected: ${peerId}`);
+        useNetworkStore()._removeOnlineUser(peerId);
+    });
+
+    // Listen for incoming direct chat connections
+    libp2pNode.handle(DIRECT_CHAT_PROTOCOL, ({ stream }) => {
+        console.log(`[NetworkService] Received direct chat stream from ${stream.remotePeer.toString()}`);
+        handleDirectChatStream(stream);
+    });
+
+    // Listen for messages on all subscribed pubsub topics
+    libp2pNode.services.pubsub.addEventListener('message', handlePubSubMessage);
+}
+
+
+/**
+ * Gracefully stops the libp2p node and cleans up connections.
+ */
+export async function shutdown() {
   if (!libp2pNode) return;
-  console.log(`[Chat] Starting new chat session with: ${targetPeerId}`);
+
   try {
-    const stream = await libp2pNode.dialProtocol(targetPeerId, CHAT_PROTOCOL);
-    console.log(`[Chat] Stream to ${targetPeerId} established.`);
-    setupChatStreamEvents(targetPeerId, stream, true);
-  } catch (err) {
-    console.error(`[Chat] Failed to connect with ${targetPeerId}:`, err);
-    useNetworkStore()._setChatStatus(targetPeerId, 'failed');
+    const offlineMessage = JSON.stringify({ type: 'offline' });
+    await libp2pNode.services.pubsub.publish(PRESENCE_TOPIC, uint8ArrayFromString(offlineMessage));
+  } catch (error) {
+    console.warn('[NetworkService] Could not publish offline presence:', error.message);
   }
+
+  await libp2pNode.stop();
+  libp2pNode = null;
+  localIdentity = null;
+  directChatStreams.clear();
+  useNetworkStore().$reset(); // Reset the entire store to initial state
+  console.log('[NetworkService] Libp2p node has been stopped.');
 }
 
-async function setupChatStreamEvents(peerId, stream, isInitiator = false) {
-  const networkStore = useNetworkStore();
-  let sharedKey = null;
+// --- Presence and Discovery (PubSub) ---
 
-  chatStreams.set(peerId, { stream, sharedKey: null });
-
-  if (isInitiator) {
-    const payload = JSON.stringify({ type: 'handshake', publicKey: Array.from(localIdentity.publicKey) });
-    await pipe([uint8ArrayFromString(payload)], stream.sink);
-  }
-
-  pipe(stream.source, async function (source) {
-    for await (const msg of source) {
-      try {
-        const message = JSON.parse(uint8ArrayToString(msg.subarray()));
-        
-        if (['handshake', 'handshake-reply'].includes(message.type)) {
-          const theirPublicKey = new Uint8Array(message.publicKey);
-          const fingerprint = await generateFingerprint(theirPublicKey);
-          networkStore._setChatFingerprint(peerId, fingerprint);
-
-          const keys = await deriveSharedKey(localIdentity.privateKey, theirPublicKey);
-          sharedKey = keys.sharedTx;
-          chatStreams.get(peerId).sharedKey = sharedKey;
-
-          networkStore._setChatStatus(peerId, 'connected');
-
-          if (message.type === 'handshake') {
-            const replyPayload = JSON.stringify({ type: 'handshake-reply', publicKey: Array.from(localIdentity.publicKey) });
-            await pipe([uint8ArrayFromString(replyPayload)], stream.sink);
-          }
-          continue;
-        }
-
-        if (message.type === 'chat' && sharedKey) {
-          const ciphertext = new Uint8Array(message.ciphertext);
-          const nonce = new Uint8Array(message.nonce);
-          const decryptedText = await decryptMessage(ciphertext, nonce, sharedKey);
-          if (decryptedText !== null) {
-            networkStore._addMessageToChat(peerId, { text: decryptedText, sender: 'them' });
-          }
-        }
-      } catch (error) {
-        console.error("Error processing incoming stream message:", error);
-      }
-    }
-  }).catch(err => {
-    console.error(`[Chat] Stream with ${peerId} closed with error:`, err);
-    networkStore._setChatStatus(peerId, 'disconnected');
-    chatStreams.delete(peerId);
+/**
+ * Periodically broadcasts an 'online' message to the presence topic.
+ */
+async function announcePresence() {
+  if (libp2pNode?.status !== 'started') return;
+  const presenceMsg = JSON.stringify({
+    type: 'online',
+    username: localIdentity.username,
   });
-}
-
-export async function sendChatMessage(targetPeerId, messageText) {
-  const chatState = chatStreams.get(targetPeerId);
-  
-  if (chatState && chatState.stream && chatState.sharedKey) {
-    try {
-      const { ciphertext, nonce } = await encryptMessage(messageText, chatState.sharedKey);
-      const payload = {
-        type: 'chat',
-        ciphertext: Array.from(ciphertext),
-        nonce: Array.from(nonce),
-      };
-      await pipe([uint8ArrayFromString(JSON.stringify(payload))], chatState.stream.sink);
-    } catch (error) {
-      console.error("[Chat] Error encrypting or sending message:", error);
-    }
-  } else {
-    console.error(`[Chat] Cannot send message to ${targetPeerId}. Secure connection not ready.`);
+  try {
+    await libp2pNode.services.pubsub.publish(PRESENCE_TOPIC, uint8ArrayFromString(presenceMsg));
+  } catch (error) {
+    console.warn('[NetworkService] Failed to announce presence:', error.message);
   }
 }
+
+/**
+ * Handles incoming messages from PubSub topics (presence and group chats).
+ */
+function handlePubSubMessage(evt) {
+    const { from, topic, data } = evt.detail;
+    if (from.toString() === libp2pNode.peerId.toString()) return; // Ignore our own messages
+
+    try {
+        const message = JSON.parse(uint8ArrayToString(data));
+        const networkStore = useNetworkStore();
+
+        if (topic === PRESENCE_TOPIC) {
+            if (message.type === 'online') {
+                networkStore._addOnlineUser({ id: from.toString(), username: message.username });
+            } else if (message.type === 'offline') {
+                networkStore._removeOnlineUser(from.toString());
+            }
+        } else { // It's a group chat message
+            const groupId = topic;
+            if (message.type === 'group-chat') {
+                networkStore._addMessageToGroup(groupId, { ...message, senderId: from.toString() });
+            } else if (message.type === 'group-control') {
+                handleGroupControlMessage(groupId, from.toString(), message);
+            }
+        }
+    } catch (error) {
+        console.warn(`[NetworkService] Error handling pubsub message on topic ${topic}:`, error);
+    }
+}
+
+
+// --- Direct Chat (1-to-1 via Protocol Streams) ---
+
+/**
+ * Dials a peer to establish a direct, encrypted chat stream.
+ * @param {string} peerId - The PeerId of the user to connect with.
+ */
+export async function startDirectChat(peerId) {
+    if (directChatStreams.has(peerId)) {
+        console.log(`[NetworkService] Direct chat with ${peerId} already exists.`);
+        return;
+    }
+    console.log(`[NetworkService] Dialing ${peerId} for a direct chat...`);
+    try {
+        const stream = await libp2pNode.dialProtocol(peerId, DIRECT_CHAT_PROTOCOL);
+        handleDirectChatStream(stream);
+    } catch (error) {
+        console.error(`[NetworkService] Failed to dial protocol for direct chat with ${peerId}:`, error);
+        useNetworkStore()._setChatStatus(peerId, 'failed');
+    }
+}
+
+/**
+ * Handles a newly established direct chat stream (both incoming and outgoing).
+ * @param {import('libp2p').Stream} stream - The libp2p stream object.
+ */
+function handleDirectChatStream(stream) {
+    const peerId = stream.remotePeer.toString();
+    directChatStreams.set(peerId, stream);
+    const networkStore = useNetworkStore();
+    networkStore._setChatStatus(peerId, 'connected');
+
+    // Listen for incoming messages on this specific stream
+    pipe(stream.source, async function (source) {
+        for await (const msg of source) {
+            try {
+                const message = JSON.parse(uint8ArrayToString(msg.subarray()));
+                networkStore._addDirectMessage(peerId, { text: message.text, sender: 'them' });
+            } catch (error) {
+                console.error(`[NetworkService] Error processing direct message from ${peerId}:`, error);
+            }
+        }
+    }).catch(error => {
+        console.error(`[NetworkService] Stream with ${peerId} ended with error:`, error);
+    });
+
+    // Handle stream ending or errors
+    stream.close().then(() => {
+        console.log(`[NetworkService] Stream with ${peerId} closed.`);
+        directChatStreams.delete(peerId);
+        networkStore._setChatStatus(peerId, 'disconnected');
+    });
+}
+
+/**
+ * Sends a message over an established direct chat stream.
+ * @param {string} peerId - The recipient's PeerId.
+ * @param {string} text - The message to send.
+ */
+export async function sendDirectMessage(peerId, text) {
+  const stream = directChatStreams.get(peerId);
+  if (!stream) {
+    console.error(`[NetworkService] No active direct stream to ${peerId}. Cannot send message.`);
+    return;
+  }
+  try {
+    const message = JSON.stringify({ text });
+    await pipe([uint8ArrayFromString(message)], stream.sink);
+  } catch (error) {
+    console.error(`[NetworkService] Failed to send direct message to ${peerId}:`, error);
+  }
+}
+
+
+// --- Group Chat & Management (PubSub) ---
+
+/**
+ * Creates a new group, subscribes to its topic, and informs the network.
+ * @param {string} groupName - The desired name for the group.
+ * @returns {string} The unique ID (topic) of the newly created group.
+ */
+export function createGroup(groupName) {
+    const groupId = `/secure-p2p-chat/group/${Date.now()}-${Math.random()}`;
+    const adminId = libp2pNode.peerId.toString();
+    
+    useNetworkStore()._addGroup({
+        id: groupId,
+        name: groupName,
+        adminId,
+        members: [{ id: adminId, username: localIdentity.username }],
+    });
+
+    libp2pNode.services.pubsub.subscribe(groupId);
+    console.log(`[NetworkService] Created and subscribed to group '${groupName}' (${groupId})`);
+    return groupId;
+}
+
+/**
+ * Sends a chat message to a specific group topic.
+ * @param {string} groupId - The topic string of the group.
+ * @param {string} text - The message content.
+ */
+export async function sendGroupMessage(groupId, text) {
+    const message = {
+        type: 'group-chat',
+        text,
+        senderUsername: localIdentity.username,
+        timestamp: Date.now(),
+    };
+    await libp2pNode.services.pubsub.publish(groupId, uint8ArrayFromString(JSON.stringify(message)));
+}
+
+/**
+ * Sends a control command for managing a group (admin only).
+ * @param {string} groupId - The group's topic.
+ * @param {string} command - The command to execute (e.g., 'add_user').
+ * @param {object} payload - Data for the command.
+ */
+async function sendGroupControlCommand(groupId, command, payload) {
+    const group = useNetworkStore().groups[groupId];
+    if (!group || group.adminId !== libp2pNode.peerId.toString()) {
+        return console.error('[NetworkService] Action denied: You are not the admin of this group.');
+    }
+
+    const controlMessage = {
+        type: 'group-control',
+        command,
+        payload,
+        adminId: group.adminId, // Include adminId for verification by recipients
+    };
+
+    await libp2pNode.services.pubsub.publish(groupId, uint8ArrayFromString(JSON.stringify(controlMessage)));
+    // Also apply the action locally for immediate UI update
+    handleGroupControlMessage(groupId, group.adminId, controlMessage);
+}
+
+
+/**
+ * Handles incoming group control messages and updates the store.
+ * @param {string} groupId - The group topic.
+ * @param {string} fromPeerId - The sender of the command.
+ * @param {object} message - The parsed control message.
+ */
+function handleGroupControlMessage(groupId, fromPeerId, message) {
+    const networkStore = useNetworkStore();
+    const group = networkStore.groups[groupId];
+    
+    // Security check: Only the declared admin can issue commands.
+    if (!group || group.adminId !== fromPeerId || message.adminId !== group.adminId) {
+        return console.warn(`[NetworkService] Unauthorized control message for group ${groupId} from ${fromPeerId}`);
+    }
+
+    const { command, payload } = message;
+
+    switch (command) {
+        case 'add_user':
+            networkStore._addUserToGroup(groupId, payload.user);
+            // If the current user was added, subscribe to the group topic.
+            if (payload.user.id === libp2pNode.peerId.toString()) {
+                libp2pNode.services.pubsub.subscribe(groupId);
+                networkStore._addGroup({ ...group, id: groupId }); // Add group to local state if not present
+            }
+            break;
+
+        case 'remove_user':
+            networkStore._removeUserFromGroup(groupId, payload.userId);
+             // If the current user was removed, unsubscribe and delete the group locally.
+            if (payload.userId === libp2pNode.peerId.toString()) {
+                libp2pNode.services.pubsub.unsubscribe(groupId);
+                networkStore._removeGroup(groupId);
+            }
+            break;
+
+        case 'clear_messages':
+            networkStore._clearGroupMessages(groupId);
+            break;
+
+        case 'delete_group':
+            libp2pNode.services.pubsub.unsubscribe(groupId);
+            networkStore._removeGroup(groupId);
+            break;
+
+        default:
+            console.warn(`[NetworkService] Received unknown group command: '${command}'`);
+    }
+}
+
+
+// --- Public API for Group Admin Actions ---
+
+export const addUserToGroup = (groupId, user) => sendGroupControlCommand(groupId, 'add_user', { user });
+export const removeUserFromGroup = (groupId, userId) => sendGroupControlCommand(groupId, 'remove_user', { userId });
+export const clearGroupMessages = (groupId) => sendGroupControlCommand(groupId, 'clear_messages', {});
+export const deleteGroup = (groupId) => sendGroupControlCommand(groupId, 'delete_group', {});
