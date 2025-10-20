@@ -1,6 +1,6 @@
 <template>
   <div class="flex flex-col h-full bg-gray-800 p-4">
-    <h2 class="text-xl font-bold text-cyan-400 mb-4">Contatos Online</h2>
+    <h2 class="text-xl font-bold text-cyan-400 mb-4">Online Contacts</h2>
     
     <div v-if="isLoading" class="flex-1 flex items-center justify-center">
         <LoadingSpinner />
@@ -9,16 +9,16 @@
     <ul v-else-if="availableUsers.length > 0" class="flex-1 overflow-y-auto">
       <li
         v-for="user in availableUsers"
-        :key="user"
+        :key="user.id"
         @click="selectContact(user)"
         class="p-2 rounded-md hover:bg-gray-700 cursor-pointer transition"
-        :class="{ 'bg-cyan-800 text-white': user === selectedContact }"
+        :class="{ 'bg-cyan-800 text-white': selectedContact === user.username }"
       >
-        {{ user }}
+        {{ user.username }}
       </li>
     </ul>
     <div v-else class="flex-1 text-gray-500 text-sm p-2">
-      <p>Nenhum outro usuário online. Vá para as "Configurações" para se conectar à rede.</p>
+      <p>No other users online. Go to "Settings" to connect to the network.</p>
     </div>
 
     <div class="mt-auto pt-4 border-t border-gray-700">
@@ -47,7 +47,7 @@
                   ]"
                 >
                   <Cog6ToothIcon class="mr-2 h-5 w-5" aria-hidden="true" />
-                  Configurações
+                  Settings
                 </router-link>
               </MenuItem>
             </div>
@@ -61,7 +61,7 @@
                   ]"
                 >
                   <ArrowRightOnRectangleIcon class="mr-2 h-5 w-5" aria-hidden="true" />
-                  Sair
+                  Logout
                 </button>
               </MenuItem>
             </div>
@@ -81,7 +81,6 @@
   const props = defineProps({
     onlineUsers: {
       type: Array,
-      // CORREÇÃO: Adiciona um valor padrão para garantir que seja sempre um array.
       default: () => [],
     },
     currentUser: {
@@ -101,10 +100,10 @@
   const emit = defineEmits(['selectContact', 'logout']);
   
   const availableUsers = computed(() =>
-    props.onlineUsers.filter(u => u !== props.currentUser)
+    props.onlineUsers.filter(u => u.username !== props.currentUser)
   );
   
-  const selectContact = (username) => {
-    emit('selectContact', username);
+  const selectContact = (user) => {
+    emit('selectContact', user);
   };
 </script>

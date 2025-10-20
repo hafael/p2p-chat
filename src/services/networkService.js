@@ -6,38 +6,40 @@ import { webSockets } from '@libp2p/websockets';
 import { noise } from '@chainsafe/libp2p-noise';
 import { mplex } from '@libp2p/mplex';
 import { gossipsub } from '@libp2p/gossipsub';
-import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
+import { bootstrap } from '@libp2p/bootstrap';
+import { kadDHT } from '@libp2p/kad-dht';
 import { identify } from '@libp2p/identify';
+import { ping } from '@libp2p/ping';
 import { circuitRelayTransport } from '@libp2p/circuit-relay-v2';
 import { dcutr } from '@libp2p/dcutr';
+import { autoNAT } from '@libp2p/autonat';
 import { fromString as uint8ArrayFromString, toString as uint8ArrayToString } from 'uint8arrays';
 import { pipe } from 'it-pipe';
 
-// Serviços de criptografia para o chat
+// Crypto services for the chat
 import { deriveSharedKey, encryptMessage, decryptMessage, generateFingerprint } from './crypto';
 
-// --- Estado Interno do Serviço ---
+// --- Internal Service State ---
 let localIdentity = null;
 let libp2pNode = null;
 const chatStreams = new Map();
 
-// --- Configuração do libp2p ---
+// --- Libp2p Config ---
 const bootstrapNodes = [
-  '/dns4/bootstrap.libp2p.io/tcp/443/wss/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
-  '/dns4/bootstrap.libp2p.io/tcp/443/wss/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTf5zyDhrS3Saz8KVK',
-  '/dns4/bootstrap.libp2p.io/tcp/443/wss/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
-  '/dns4/bootstrap.libp2p.io/tcp/443/wss/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcXoagJQ'
+  "/ip4/104.131.131.82/tcp/4001/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+        "/dnsaddr/bootstrap.libp2p.io/ipfs/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+        "/dnsaddr/bootstrap.libp2p.io/ipfs/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
 ];
 const CHAT_PROTOCOL = '/p2p-chat-seguro/1.0.0';
 const DISCOVERY_TOPIC = 'p2p-chat-discovery-topic-2025-v2';
 
 /**
- * Inicializa o serviço de rede e o nó libp2p.
+ * Initializes the network service and the libp2p node.
  */
 export async function initialize(identity) {
   if (libp2pNode) return;
   localIdentity = identity;
-  console.log(`[NetworkService] A inicializar para: ${identity.username}`);
+  console.log(`[NetworkService] Initializing for: ${identity.username}`);
   
   const networkStore = useNetworkStore();
   networkStore._setConnectionStatus('connecting');
@@ -47,101 +49,133 @@ export async function initialize(identity) {
       transports: [
         webSockets(),
         webRTC(),
+        // THE CRUCIAL PART FOR NAT TRAVERSAL
         circuitRelayTransport({
-          discoverRelays: 1 // Tenta descobrir pelo menos 1 relay na rede
+          discoverRelays: 2 // Discover and use 2 relays
         })
       ],
       connectionEncryption: [noise()],
       streamMuxers: [mplex()],
       peerDiscovery: [
-        pubsubPeerDiscovery({
-          interval: 1000, // Procura por novos peers a cada segundo
-          topics: [DISCOVERY_TOPIC]
+        bootstrap({
+          list: bootstrapNodes
         })
       ],
       services: {
+        // This service is required for dcutr to work
         identify: identify(),
-        pubsub: gossipsub({ allowPublishToZeroPeers: true, emitSelf: true }),
-        dcutr: dcutr()
+        // This service is essential for finding other peers
+        dht: kadDHT({
+          clientMode: true,
+        }),
+        // This service allows us to detect our NAT status and find relays if needed
+        autoNAT: autoNAT(),
+        // This service allows us to upgrade relayed connections to direct connections
+        dcutr: dcutr(),
+        ping: ping(),
+        pubsub: gossipsub({ 
+          allowPublishToZeroPeers: true, 
+          emitSelf: false 
+        }),
       }
+    });
+
+    // Add diagnostic listeners
+    libp2pNode.addEventListener('peer:discovery', (evt) => {
+      console.log(`[Diagnostic] Discovered peer: ${evt.detail.id.toString()}`);
+    });
+    libp2pNode.addEventListener('peer:connect', (evt) => {
+      console.log(`[Diagnostic] Connected to peer: ${evt.detail.toString()}`);
+    });
+    libp2pNode.addEventListener('peer:disconnect', (evt) => {
+        console.log(`[Diagnostic] Disconnected from peer: ${evt.detail.toString()}`);
+    });
+    libp2pNode.services.pubsub.addEventListener('subscription-change', (evt) => {
+        console.log(`[Diagnostic] PubSub subscription change: Peer ${evt.detail.peerId.toString()} subscribed to ${evt.detail.subscriptions[0].topic}`);
     });
 
     await libp2pNode.start();
     networkStore._setConnectionStatus('connected');
-    console.log('[NetworkService] Nó libp2p iniciado com PubSub Discovery. PeerId:', libp2pNode.peerId.toString());
+    console.log('[NetworkService] Libp2p node started. PeerId:', libp2pNode.peerId.toString());
+    console.log('[NetworkService] Listening on addresses:');
+    libp2pNode.getMultiaddrs().forEach(addr => console.log(addr.toString()));
+
 
     await libp2pNode.handle(CHAT_PROTOCOL, ({ stream }) => {
       const peerId = stream.remotePeer.toString();
-      console.log(`[NetworkService] Recebida nova conexão de chat de: ${peerId}`);
+      console.log(`[NetworkService] Received new chat connection from: ${peerId}`);
       setupChatStreamEvents(peerId, stream, false);
     });
 
+    // Subscribe to the discovery topic
     libp2pNode.services.pubsub.subscribe(DISCOVERY_TOPIC);
     libp2pNode.services.pubsub.addEventListener('message', (evt) => {
       try {
+        if (evt.detail.topic !== DISCOVERY_TOPIC) return;
+        
         const message = JSON.parse(uint8ArrayToString(evt.detail.data));
-        if (message.type === 'user-presence' && message.peerId !== libp2pNode.peerId.toString()) {
+
+        if (message.peerId === libp2pNode.peerId.toString()) return;
+
+        if (message.type === 'user-presence') {
           const networkStore = useNetworkStore();
           const currentUsers = networkStore.onlineUsers;
           if (!currentUsers.some(u => u.id === message.peerId)) {
             const newUser = { id: message.peerId, username: message.username };
+            console.log(`[NetworkService] User presence received: ${newUser.username}`);
             networkStore._updateOnlineUsers([...currentUsers, newUser]);
           }
         }
       } catch (e) {
-        console.warn("Recebida mensagem de descoberta malformada:", e);
+        console.warn("Received malformed discovery message:", e);
       }
     });
     
-    // Anuncia a nossa presença na rede periodicamente
-    setInterval(() => {
+    // Announce our presence on the network periodically
+    const announcePresence = async () => {
       if (libp2pNode && libp2pNode.status === 'started') {
         const presenceMessage = JSON.stringify({
           type: 'user-presence',
           peerId: libp2pNode.peerId.toString(),
           username: localIdentity.username,
         });
-        libp2pNode.services.pubsub.publish(DISCOVERY_TOPIC, uint8ArrayFromString(presenceMessage));
-      }
-    }, 10000);
-    
-    // Anúncio inicial após um breve atraso
-    setTimeout(() => {
-        if (libp2pNode && libp2pNode.status === 'started') {
-            const presenceMessage = JSON.stringify({
-                type: 'user-presence',
-                peerId: libp2pNode.peerId.toString(),
-                username: localIdentity.username,
-            });
-            libp2pNode.services.pubsub.publish(DISCOVERY_TOPIC, uint8ArrayFromString(presenceMessage));
+        try {
+          await libp2pNode.services.pubsub.publish(DISCOVERY_TOPIC, uint8ArrayFromString(presenceMessage));
+        } catch (err) {
+          console.warn(`[NetworkService] Could not publish presence, no peers subscribed yet: ${err.message}`);
         }
-    }, 2000);
+      }
+    };
+
+    setInterval(announcePresence, 15000); // Increased interval
+    setTimeout(announcePresence, 5000); // Increased initial delay
 
   } catch (err) {
-    console.error("[NetworkService] Falha ao iniciar o nó libp2p:", err);
+    console.error("[NetworkService] Failed to start libp2p node:", err);
     networkStore._setConnectionStatus('disconnected');
   }
 }
 
+// ... O restante do arquivo (startChatSession, etc.) permanece inalterado ...
 /**
- * Inicia uma nova sessão de chat com um peer-alvo.
+ * Starts a new chat session with a target peer.
  */
 export async function startChatSession(targetPeerId) {
   if (!libp2pNode) return;
 
-  console.log(`[Chat] A iniciar nova sessão de chat com: ${targetPeerId}`);
+  console.log(`[Chat] Starting new chat session with: ${targetPeerId}`);
   try {
     const stream = await libp2pNode.dialProtocol(targetPeerId, CHAT_PROTOCOL);
-    console.log(`[Chat] Stream para ${targetPeerId} estabelecido.`);
+    console.log(`[Chat] Stream to ${targetPeerId} established.`);
     setupChatStreamEvents(targetPeerId, stream, true);
   } catch (err) {
-    console.error(`[Chat] Falha ao conectar com ${targetPeerId}:`, err);
+    console.error(`[Chat] Failed to connect with ${targetPeerId}:`, err);
     useNetworkStore()._setChatStatus(targetPeerId, 'failed');
   }
 }
 
 /**
- * Configura todos os eventos para um stream de chat P2P.
+ * Sets up all events for a P2P chat stream.
  */
 async function setupChatStreamEvents(peerId, stream, isInitiator = false) {
   const networkStore = useNetworkStore();
@@ -186,18 +220,18 @@ async function setupChatStreamEvents(peerId, stream, isInitiator = false) {
           }
         }
       } catch (error) {
-        console.error("Erro ao processar mensagem recebida no stream:", error);
+        console.error("Error processing incoming stream message:", error);
       }
     }
   }).catch(err => {
-    console.error(`[Chat] Stream com ${peerId} fechado com erro:`, err);
+    console.error(`[Chat] Stream with ${peerId} closed with error:`, err);
     networkStore._setChatStatus(peerId, 'disconnected');
     chatStreams.delete(peerId);
   });
 }
 
 /**
- * Envia uma mensagem de chat encriptada para um utilizador.
+ * Sends an encrypted chat message to a user.
  */
 export async function sendChatMessage(targetPeerId, messageText) {
   const chatState = chatStreams.get(targetPeerId);
@@ -212,9 +246,9 @@ export async function sendChatMessage(targetPeerId, messageText) {
       };
       await pipe([uint8ArrayFromString(JSON.stringify(payload))], chatState.stream.sink);
     } catch (error) {
-      console.error("[Chat] Erro ao encriptar ou enviar mensagem:", error);
+      console.error("[Chat] Error encrypting or sending message:", error);
     }
   } else {
-    console.error(`[Chat] Não é possível enviar mensagem para ${targetPeerId}. A conexão segura não está pronta.`);
+    console.error(`[Chat] Cannot send message to ${targetPeerId}. Secure connection not ready.`);
   }
 }

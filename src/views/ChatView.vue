@@ -1,10 +1,12 @@
 <template>
   <div class="flex h-screen w-full bg-gray-800 text-white">
     <aside class="w-1/4">
+      {{ onlineUsers }}
       <ContactList
         :online-users="onlineUsers"
         :current-user="username"
         :is-loading="isLoadingUsers"
+        :selected-contact="activeChat?.contactUsername"
         @select-contact="startChat"
         @logout="handleLogout"
       />
@@ -22,12 +24,12 @@
         />
         
         <div v-else class="text-center">
-          <h1 class="text-3xl font-bold">Bem-vindo ao Chat P2P Seguro</h1>
-          <p v-if="networkStore.status === 'connected'" class="text-gray-400 mt-4">Selecione um contato na lista à esquerda para iniciar uma conversa segura.</p>
+          <h1 class="text-3xl font-bold">Welcome to Secure P2P Chat</h1>
+          <p v-if="networkStore.status === 'connected'" class="text-gray-400 mt-4">Select a contact from the list on the left to start a secure conversation.</p>
           <p v-else class="text-gray-400 mt-4">
-            Você está desconectado da rede. Vá para as
-            <router-link to="/settings" class="text-cyan-400 hover:underline">Configurações</router-link>
-            para se conectar.
+            You are disconnected from the network. Go to
+            <router-link to="/settings" class="text-cyan-400 hover:underline">Settings</router-link>
+            to connect.
           </p>
         </div>
       </transition>
@@ -36,7 +38,12 @@
 </template>
 
 <style>
-/* ... (estilos de fade existentes) ... */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
 </style>
 
 <script setup>
@@ -57,9 +64,7 @@ const myFingerprint = ref('');
 const onlineUsers = computed(() => networkStore.onlineUsers);
 const isLoadingUsers = computed(() => networkStore.status === 'connecting' && onlineUsers.value.length === 0);
 
-// TODO: A lógica de chat (activeChat, startChat, handleSendMessage) será movida para o networkService/store.
 const activeChat = computed(() => networkStore.activeChat);
-const messages = ref([]); // Temporário
 
 // --- Lifecycle Hooks ---
 onMounted(async () => {
@@ -74,17 +79,19 @@ onMounted(async () => {
   networkStore.initialize(loadedIdentity);
 });
 
-// Ações de chat agora chamam o store
-const startChat = (contactUsername) => {
-  networkStore.startOrShowChat(contactUsername);
+// --- Chat Actions ---
+const startChat = (contactUser) => {
+  networkStore.startOrShowChat(contactUser);
 };
 const handleSendMessage = (messageText) => {
   networkStore.sendMessage(messageText);
 };
 
+// --- Logout ---
 const handleLogout = async () => {
-  if (confirm('Tem certeza que deseja sair? Sua identidade local será apagada.')) {
+  if (confirm('Are you sure you want to log out? Your local identity will be erased.')) {
     await clearIdentity();
+    // Stop network service gracefully if possible (optional)
     router.push('/');
   }
 };
