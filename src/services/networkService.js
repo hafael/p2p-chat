@@ -30,7 +30,7 @@ const bootstrapNodes = [
         "/dnsaddr/bootstrap.libp2p.io/ipfs/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
         "/dnsaddr/bootstrap.libp2p.io/ipfs/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
 ];
-const CHAT_PROTOCOL = '/p2p-chat-seguro/1.0.0';
+const CHAT_PROTOCOL = '/secure-p2p-chat/1.0.0';
 const DISCOVERY_TOPIC = 'p2p-chat-discovery-topic-2025-v2';
 
 /**
@@ -49,9 +49,10 @@ export async function initialize(identity) {
       transports: [
         webSockets(),
         webRTC(),
-        // THE CRUCIAL PART FOR NAT TRAVERSAL
+        // This transport is essential for NAT traversal.
+        // It allows us to connect to peers through a relay.
         circuitRelayTransport({
-          discoverRelays: 2 // Discover and use 2 relays
+          discoverRelays: 2 // Discover and use up to 2 relays
         })
       ],
       connectionEncryption: [noise()],
@@ -62,20 +63,18 @@ export async function initialize(identity) {
         })
       ],
       services: {
-        // This service is required for dcutr to work
-        identify: identify(),
-        // This service is essential for finding other peers
-        dht: kadDHT({
-          clientMode: true,
+        identify: identify({
+          protocolPrefix: 'libp2p', // Ensure the identify protocol is properly configured
         }),
-        // This service allows us to detect our NAT status and find relays if needed
-        autoNAT: autoNAT(),
-        // This service allows us to upgrade relayed connections to direct connections
-        dcutr: dcutr(),
+        dht: kadDHT({
+          clientMode: true, // A browser node must be a client
+        }),
+        autoNAT: autoNAT(), // Helps the node understand its network condition
+        dcutr: dcutr(), // Helps upgrade relayed connections to direct ones
         ping: ping(),
         pubsub: gossipsub({ 
-          allowPublishToZeroPeers: true, 
-          emitSelf: false 
+          // allowPublishToZeroPeers: true, 
+          // emitSelf: false 
         }),
       }
     });
@@ -90,16 +89,14 @@ export async function initialize(identity) {
     libp2pNode.addEventListener('peer:disconnect', (evt) => {
         console.log(`[Diagnostic] Disconnected from peer: ${evt.detail.toString()}`);
     });
-    libp2pNode.services.pubsub.addEventListener('subscription-change', (evt) => {
-        console.log(`[Diagnostic] PubSub subscription change: Peer ${evt.detail.peerId.toString()} subscribed to ${evt.detail.subscriptions[0].topic}`);
-    });
 
     await libp2pNode.start();
     networkStore._setConnectionStatus('connected');
     console.log('[NetworkService] Libp2p node started. PeerId:', libp2pNode.peerId.toString());
+
+    // Log all addresses, including relayed ones
     console.log('[NetworkService] Listening on addresses:');
     libp2pNode.getMultiaddrs().forEach(addr => console.log(addr.toString()));
-
 
     await libp2pNode.handle(CHAT_PROTOCOL, ({ stream }) => {
       const peerId = stream.remotePeer.toString();
@@ -110,11 +107,11 @@ export async function initialize(identity) {
     // Subscribe to the discovery topic
     libp2pNode.services.pubsub.subscribe(DISCOVERY_TOPIC);
     libp2pNode.services.pubsub.addEventListener('message', (evt) => {
+      console.log('received pubsub message on topic:', evt.detail.topic);
       try {
         if (evt.detail.topic !== DISCOVERY_TOPIC) return;
         
         const message = JSON.parse(uint8ArrayToString(evt.detail.data));
-
         if (message.peerId === libp2pNode.peerId.toString()) return;
 
         if (message.type === 'user-presence') {
@@ -133,22 +130,29 @@ export async function initialize(identity) {
     
     // Announce our presence on the network periodically
     const announcePresence = async () => {
-      if (libp2pNode && libp2pNode.status === 'started') {
-        const presenceMessage = JSON.stringify({
-          type: 'user-presence',
-          peerId: libp2pNode.peerId.toString(),
-          username: localIdentity.username,
-        });
-        try {
-          await libp2pNode.services.pubsub.publish(DISCOVERY_TOPIC, uint8ArrayFromString(presenceMessage));
-        } catch (err) {
-          console.warn(`[NetworkService] Could not publish presence, no peers subscribed yet: ${err.message}`);
-        }
+      console.log('[NetworkService] Announcing presence on the network...');
+      if (libp2pNode?.status !== 'started') return;
+
+      const peersSubscribed = libp2pNode.services.pubsub.getSubscribers(DISCOVERY_TOPIC);
+      if (!peersSubscribed) {
+        console.warn('[NetworkService] No peers subscribed to the discovery topic. Announcing presence anyway.');
+      }
+
+      const presenceMessage = JSON.stringify({
+        type: 'user-presence',
+        peerId: libp2pNode.peerId.toString(),
+        username: localIdentity.username,
+      });
+      
+      try {
+        await libp2pNode.services.pubsub.publish(DISCOVERY_TOPIC, uint8ArrayFromString(presenceMessage));
+      } catch (err) {
+        console.warn(`[NetworkService] Could not publish presence: ${err.message}`);
       }
     };
 
-    setInterval(announcePresence, 15000); // Increased interval
-    setTimeout(announcePresence, 5000); // Increased initial delay
+    setInterval(announcePresence, 15000);
+    setTimeout(announcePresence, 5000);
 
   } catch (err) {
     console.error("[NetworkService] Failed to start libp2p node:", err);
@@ -156,13 +160,10 @@ export async function initialize(identity) {
   }
 }
 
-// ... O restante do arquivo (startChatSession, etc.) permanece inalterado ...
-/**
- * Starts a new chat session with a target peer.
- */
+// ... the rest of the file remains the same ...
+
 export async function startChatSession(targetPeerId) {
   if (!libp2pNode) return;
-
   console.log(`[Chat] Starting new chat session with: ${targetPeerId}`);
   try {
     const stream = await libp2pNode.dialProtocol(targetPeerId, CHAT_PROTOCOL);
@@ -174,9 +175,6 @@ export async function startChatSession(targetPeerId) {
   }
 }
 
-/**
- * Sets up all events for a P2P chat stream.
- */
 async function setupChatStreamEvents(peerId, stream, isInitiator = false) {
   const networkStore = useNetworkStore();
   let sharedKey = null;
@@ -230,9 +228,6 @@ async function setupChatStreamEvents(peerId, stream, isInitiator = false) {
   });
 }
 
-/**
- * Sends an encrypted chat message to a user.
- */
 export async function sendChatMessage(targetPeerId, messageText) {
   const chatState = chatStreams.get(targetPeerId);
   

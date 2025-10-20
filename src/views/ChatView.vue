@@ -1,7 +1,6 @@
 <template>
   <div class="flex h-screen w-full bg-gray-800 text-white">
     <aside class="w-1/4">
-      {{ onlineUsers }}
       <ContactList
         :online-users="onlineUsers"
         :current-user="username"
@@ -26,10 +25,11 @@
         <div v-else class="text-center">
           <h1 class="text-3xl font-bold">Welcome to Secure P2P Chat</h1>
           <p v-if="networkStore.status === 'connected'" class="text-gray-400 mt-4">Select a contact from the list on the left to start a secure conversation.</p>
+          <p v-else-if="networkStore.status === 'connecting'" class="text-gray-400 mt-4">Connecting to the P2P network...</p>
           <p v-else class="text-gray-400 mt-4">
-            You are disconnected from the network. Go to
+            You are disconnected. Go to
             <router-link to="/settings" class="text-cyan-400 hover:underline">Settings</router-link>
-            to connect.
+            to check your connection status.
           </p>
         </div>
       </transition>

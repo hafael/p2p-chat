@@ -2,15 +2,15 @@
 import sodium from 'libsodium-wrappers';
 
 /**
- * Inicializa o módulo libsodium. Essencial ser chamado antes de qualquer operação criptográfica.
+ * Initializes the libsodium module. Must be called before any crypto operations.
  */
 export async function init() {
   await sodium.ready;
-  console.log('libsodium inicializado com sucesso.');
+  console.log('libsodium initialized successfully.');
 }
 
 /**
- * Gera um par de chaves X25519 para o usuário.
+ * Generates a X25519 key pair for the user.
  * @returns {Promise<{publicKey: Uint8Array, privateKey: Uint8Array}>}
  */
 export async function generateKeyPair() {
@@ -20,24 +20,23 @@ export async function generateKeyPair() {
 }
 
 /**
- * Deriva uma chave de sessão compartilhada usando o handshake Diffie-Hellman (X25519).
- * @param {Uint8Array} myPrivateKey - A chave privada do usuário local.
- * @param {Uint8Array} theirPublicKey - A chave pública do contato.
- * @returns {Promise<{sharedRx: Uint8Array, sharedTx: Uint8Array}>} - Chaves para receber e enviar mensagens.
+ * Derives a shared session key using Diffie-Hellman handshake (X25519).
+ * @param {Uint8Array} myPrivateKey - The local user's private key.
+ * @param {Uint8Array} theirPublicKey - The contact's public key.
+ * @returns {Promise<{sharedRx: Uint8Array, sharedTx: Uint8Array}>} - Keys for receiving and sending messages.
  */
 export async function deriveSharedKey(myPrivateKey, theirPublicKey) {
   await sodium.ready;
-  // Para comunicação P2P, as chaves são derivadas em ambas as direções
   const sharedKey = sodium.crypto_box_beforenm(theirPublicKey, myPrivateKey);
-  // No protótipo, podemos usar a mesma chave para Rx e Tx para simplificar.
-  // Em uma implementação mais robusta, as chaves seriam diferentes.
+  // For this prototype, we can use the same key for Rx and Tx to simplify.
+  // In a more robust implementation, these keys would be different.
   return { sharedRx: sharedKey, sharedTx: sharedKey };
 }
 
 /**
- * Criptografa uma mensagem usando uma chave de sessão simétrica (ChaCha20-Poly1305).
- * @param {string} message - A mensagem a ser criptografada.
- * @param {Uint8Array} sharedKey - A chave de sessão compartilhada.
+ * Encrypts a message using a symmetric session key (ChaCha20-Poly1305).
+ * @param {string} message - The message to be encrypted.
+ * @param {Uint8Array} sharedKey - The shared session key.
  * @returns {Promise<{ciphertext: Uint8Array, nonce: Uint8Array}>}
  */
 export async function encryptMessage(message, sharedKey) {
@@ -48,36 +47,33 @@ export async function encryptMessage(message, sharedKey) {
 }
 
 /**
- * Decriptografa uma mensagem.
- * @param {Uint8Array} ciphertext - A mensagem cifrada.
- * @param {Uint8Array} nonce - O nonce usado na criptografia.
- * @param {Uint8Array} sharedKey - A chave de sessão compartilhada.
- * @returns {Promise<string|null>} - A mensagem decifrada ou null se a verificação falhar.
+ * Decrypts a message.
+ * @param {Uint8Array} ciphertext - The encrypted message.
+ * @param {Uint8Array} nonce - The nonce used for encryption.
+ * @param {Uint8Array} sharedKey - The shared session key.
+ * @returns {Promise<string|null>} - The decrypted message or null if verification fails.
  */
 export async function decryptMessage(ciphertext, nonce, sharedKey) {
   await sodium.ready;
   const decrypted = sodium.crypto_secretbox_open_easy(ciphertext, nonce, sharedKey);
-  // Retorna a mensagem como string UTF-8
+  // Returns the message as a UTF-8 string
   return sodium.to_string(decrypted);
 }
 
 /**
- * Gera um fingerprint (impressão digital) legível de uma chave pública.
- * Usa um hash criptográfico (BLAKE2b) e o formata para fácil comparação visual.
- * @param {Uint8Array} publicKey - A chave pública a ser processada.
- * @returns {Promise<string>} - Uma string formatada como 'XXXXX XXXXX XXXXX'.
+ * Generates a human-readable fingerprint from a public key.
+ * Uses a cryptographic hash (BLAKE2b) and formats it for easy visual comparison.
+ * @param {Uint8Array} publicKey - The public key to process.
+ * @returns {Promise<string>} - A formatted string like 'XXXXX XXXXX XXXXX'.
  */
 export async function generateFingerprint(publicKey) {
   await sodium.ready;
-  // Gera um hash de 15 bytes da chave pública
   const hash = sodium.crypto_generichash(15, publicKey);
   
-  // Converte os bytes do hash para uma string de números (ex: 255 -> "255")
   const numericString = Array.from(hash)
     .map(byte => byte.toString().padStart(3, '0'))
     .join('');
   
-  // Agrupa a string numérica em 3 blocos de 5 dígitos para facilitar a leitura
   const part1 = numericString.slice(0, 5);
   const part2 = numericString.slice(5, 10);
   const part3 = numericString.slice(10, 15);

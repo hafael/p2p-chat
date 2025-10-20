@@ -1,17 +1,17 @@
 <template>
   <div class="flex flex-col items-center justify-center p-8 bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
-    <h2 class="text-2xl font-bold mb-2 text-cyan-400">Crie sua Identidade Segura</h2>
-    <p class="text-gray-400 mb-6 text-center">Seu nome de usuário é seu identificador na rede descentralizada.</p>
+    <h2 class="text-2xl font-bold mb-2 text-cyan-400">Create Your Secure Identity</h2>
+    <p class="text-gray-400 mb-6 text-center">Your username is your identifier on the decentralized network.</p>
 
     <form @submit.prevent="handleRegister" class="w-full">
       <div class="mb-4">
-        <label for="username" class="block text-sm font-medium text-gray-300 mb-2">Nome de Usuário</label>
+        <label for="username" class="block text-sm font-medium text-gray-300 mb-2">Username</label>
         <input
           id="username"
           v-model="username"
           type="text"
           :disabled="isLoading"
-          placeholder="ex: ana_cripto"
+          placeholder="e.g., crypto_rebel"
           class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition duration-300"
           required
         />
@@ -23,7 +23,7 @@
         class="w-full flex items-center justify-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-70"
       >
         <LoadingSpinner v-if="isLoading" size="sm" color="white" />
-        <span v-else>Criar Identidade e Entrar</span>
+        <span v-else>Create Identity & Enter</span>
       </button>
 
       <p v-if="error" class="text-red-400 text-sm mt-4 text-center">{{ error }}</p>

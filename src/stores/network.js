@@ -36,6 +36,7 @@ export const useNetworkStore = defineStore('network', {
      * @param {{id: string, username: string}} targetUser - The target user object.
      */
     startOrShowChat(targetUser) {
+      console.log('[Store] startOrShowChat called for:', targetUser);
       if (!targetUser || !targetUser.id) {
         console.error('[Store] startOrShowChat called with invalid targetUser:', targetUser);
         return;
