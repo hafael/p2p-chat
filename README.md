@@ -6,23 +6,24 @@ The project focuses on ensuring confidentiality, network autonomy, and user priv
 
 ## ✨ Key Features
 
-  * 🔐 **True End-to-End Encryption**: Utilizes the `libsodium.js` library for strong cryptography based on ChaCha20-Poly1305 or AES-GCM. The key exchange handshake uses the X25519 algorithm.
-  * 🌐 **Decentralized Network**: Communication occurs directly between peers (P2P) via WebRTC DataChannel, eliminating the need for a central server for message exchange.
-  * 🤝 **Volunteer Supernodes**: User discovery is facilitated by volunteer supernodes. Any user can act as a supernode to help others connect, keeping the network resilient and decentralized.
-  * 👤 **Secure Identity**: Each user possesses an asymmetric key pair generated locally. The private key never leaves the user's device.
-  * 🔍 **Strong Authentication**: The identity of contacts can be verified via a public key *fingerprint*, protecting against man-in-the-middle attacks.
+  * 🔐 **End-to-End Encryption**: Cryptography is handled by `libp2p-noise`, ensuring secure channels. Direct messages are encrypted, though group messages via pubsub are not end-to-end encrypted in the current implementation.
+  * 🌐 **Decentralized Network with libp2p**: The application uses `libp2p` to create a robust, decentralized network. It connects to public bootstrap nodes to discover other peers.
+  * 🤝 **Peer Discovery**: Peer discovery is automatic. The application uses `pubsub-peer-discovery` over a specific topic to find other users of the chat application.
+  * 👤 **Secure Identity**: Each user is identified by a `libp2p` `PeerId`, which is generated locally and is unique to the user.
+  * 💬 **Direct and Group Chats**: Supports both direct (1-to-1) chats over encrypted streams and group chats using `libp2p`'s `gossipsub` (pubsub) mechanism.
   * 🕒 **Zero Stored Messages**: No messages or metadata are stored on servers. Communication is ephemeral and exists only on the participants' devices.
   * 🎨 **Modern Interface**: Developed with VueJS 3, Vite, and Tailwind CSS, prioritizing a lightweight, responsive, and modern user experience.
 
-## 🧠 How It Works: Hybrid Architecture
+## 🧠 How It Works: libp2p Architecture
 
-The project uses a hybrid network model:
+The project leverages the power of `libp2p` to create a fully decentralized chat application. Here's how it works:
 
-1.  **Direct P2P**: For message exchange, communication is established directly between user devices using **WebRTC**.
-2.  **Volunteer Supernodes**: For contact discovery, the network utilizes supernodes. A supernode is simply another user on the network who chooses to help connect other peers. It acts as an ephemeral intermediary for WebRTC signaling, relaying the "offers" and "answers" needed to establish the P2P connection.
-3.  **Manual Bootstrapping**: The initial connection to a supernode is made via an "invite code" (manual signaling), ensuring there is no fixed central entry point to the network.
-
-Once the P2P connection between two chat users is established (with the help of the supernode), the supernode is completely removed from the communication path.
+1.  **Initialization**: When the user starts the application, a `libp2p` node is created in the browser. This node has a unique `PeerId` that identifies the user on the network.
+2.  **Bootstrapping**: The `libp2p` node connects to a set of public bootstrap nodes. These nodes help new peers discover other peers on the network.
+3.  **Peer Discovery**: Once connected to the bootstrap nodes, the application uses `libp2p`'s `pubsub-peer-discovery` mechanism. It subscribes to a specific topic (`/libp2p/example-chat/peer-discovery`) to find other users of the same application.
+4.  **Presence**: The application uses `libp2p`'s `gossipsub` (pubsub) to broadcast and receive presence information. This allows users to see who is online.
+5.  **Direct Chat**: For one-to-one conversations, a direct, encrypted stream is established between two peers using the `libp2p-noise` security protocol.
+6.  **Group Chat**: Group conversations are handled using `libp2p`'s `gossipsub`. Users subscribe to a topic that represents the group, and messages are broadcast to all subscribers.
 
 ## 🧰 Tech Stack
 
@@ -30,8 +31,8 @@ Once the P2P connection between two chat users is established (with the help of 
 | :--- | :--- | :--- |
 | **UI/Frontend** | VueJS 3 + Vite | Reactive and modular Single Page Application. |
 | **Styling** | Tailwind CSS + Headless UI | Agile, responsive design and accessible components. |
-| **P2P Communication** | WebRTC + `simple-peer` | Direct transport channel between clients. |
-| **Cryptography** | `libsodium.js` | Key generation (X25519), session key derivation, and E2EE. |
+| **P2P Communication** | `libp2p` | Handles peer discovery, transport (WebRTC, WebSockets), and stream multiplexing. |
+| **Cryptography** | `libp2p-noise` | Provides encrypted, authenticated communication channels. |
 | **Global State** | Pinia | Centralized state management for the Vue application. |
 
 ## 🚀 How to Run the Prototype
@@ -64,36 +65,16 @@ Once the P2P connection between two chat users is established (with the help of 
 
 4.  Open your browser and navigate to `http://localhost:5173`.
 
-## 🧪 Testing the P2P Connection (Hybrid Model)
+## 🧪 Testing the P2P Connection
 
-To test the communication, you will need a minimum of **three** browser tabs/windows: one **Supernode** and two **Clients**.
+To test the communication, you will need a minimum of **two** browser tabs/windows.
 
-### 1\. Start the Supernode
-
-  * **Browser A**: Create your identity (e.g., `supernode-host`).
-  * Navigate to **Settings**.
-  * In the "Act as a Volunteer Supernode" section, enable the switch.
-  * Copy the generated **invite code**.
-
-### 2\. Connect Clients to the Supernode
-
-  * **Browser B**: Create your identity (e.g., `client-alpha`).
-
-  * Go to **Settings**.
-
-  * Paste the code from **Browser A** into the "Connect to a Supernode" section and click **Connect**.
-
-  * A **response code** will be generated. Copy it.
-
-  * **Back in Browser A**: In the "Act as a Volunteer Supernode" section, paste the response code from **Browser B** and click **Accept Client**. The connection will be established.
-
-  * **Browser C**: Create your identity (e.g., `client-beta`).
-
-  * Repeat the process above to connect **Browser C** to **Browser A**.
-
-### 3\. Start Chatting
-
-Once the clients are connected to the supernode, they will appear in each other's "Online Contacts" list. Now, one client can click on the other's name to initiate an end-to-end encrypted P2P chat session.
+1.  **Open two browser tabs/windows** and navigate to `http://localhost:5173`.
+2.  **Create a different identity** in each tab (e.g., `user-a` and `user-b`).
+3.  **Wait a few moments** for the `libp2p` nodes to discover each other through the bootstrap nodes and pubsub.
+4.  Once discovered, the other user will appear in the "Online Contacts" list.
+5.  Click on the other user's name to start a direct, end-to-end encrypted chat.
+6.  You can also create groups and invite other users to join.
 
 ## 🗺️ Future Roadmap
 

@@ -2,31 +2,32 @@
 
 ## 1. Objetivo do Projeto
 
-O **Chat P2P Seguro** é um protótipo de sistema de comunicação descentralizada, desenvolvido para demonstrar a viabilidade de um modelo de **mensageria segura sem servidor central**, baseado em conexões ponto a ponto (P2P) e **criptografia ponta a ponta**.
-O foco principal do projeto é garantir **confidencialidade**, **autonomia da rede** e **privacidade do usuário** desde o design inicial.
+O **Chat P2P Seguro** é um protótipo de sistema de comunicação descentralizada, desenvolvido para demonstrar a viabilidade de um modelo de **mensageria segura sem servidor central**, baseado em conexões ponto a ponto (P2P) e **criptografia de canal**. O foco principal do projeto é garantir **confidencialidade**, **autonomia da rede** e **privacidade do usuário** desde o design inicial.
 
 ---
 
 ## 2. Arquitetura de Comunicação
 
-### 2.1. Modelo de Rede Híbrida
+### 2.1. Modelo de Rede com libp2p
 
-A arquitetura adota um modelo híbrido, combinando:
+A arquitetura é baseada no framework **`libp2p`**, que gerencia todo o ciclo de vida da comunicação P2P. O modelo inclui:
 
-* **P2P direto** entre clientes para troca de mensagens;
-* **Supernós voluntários** para sinalização e descoberta de usuários;
-* Ausência de servidor central fixo.
-
-Os supernós atuam apenas como **intermediários efêmeros de descoberta** (username → chave pública + sinalização), sem armazenar mensagens, histórico ou dados persistentes.
-Após o handshake inicial, toda a comunicação ocorre exclusivamente entre os dispositivos dos usuários.
+*   **Nós `libp2p`**: Cada cliente opera como um nó na rede `libp2p`, com uma identidade criptográfica única (`PeerId`).
+*   **Bootstrapping**: Para entrar na rede, os nós se conectam a uma lista de **nós de bootstrap** públicos e estáveis. Esses nós servem como pontos de encontro para descobrir outros participantes.
+*   **Descoberta de Pares (Peer Discovery)**: A descoberta de outros usuários do chat é feita através do **`pubsub-peer-discovery`**. Os nós se inscrevem em um tópico específico do PubSub; ao encontrar outros inscritos no mesmo tópico, eles se adicionam à lista de contatos online.
+*   **Comunicação Direta e em Grupo**:
+    *   **Chat 1-para-1**: A comunicação direta é estabelecida através de um *stream* seguro e criptografado usando o protocolo `/secure-p2p-chat/direct/1.0.0`.
+    *   **Chat em Grupo**: As conversas em grupo utilizam o mecanismo de `gossipsub` (PubSub) do `libp2p`, onde as mensagens são publicadas em um tópico que representa o grupo.
 
 ### 2.2. Estabelecimento de Sessão
 
-1. O usuário A resolve o `username` de B via supernó.
-2. Obtém a **chave pública** de B e os dados de sinalização.
-3. Inicia o handshake criptográfico para derivar uma chave de sessão compartilhada.
-4. A conexão P2P é estabelecida via **WebRTC DataChannel**.
-5. Toda mensagem trafega cifrada.
+1.  **Inicialização**: O cliente cria uma instância do `libp2p`, que automaticamente gera uma `PeerId`.
+2.  **Conexão à Rede**: O nó se conecta aos nós de bootstrap para obter uma lista inicial de pares.
+3.  **Descoberta via PubSub**: O nó se inscreve nos tópicos de descoberta de pares e de presença para encontrar outros usuários online.
+4.  **Início do Chat**:
+    *   Para um chat direto, o cliente A usa o `libp2p` para abrir um *stream* direto com o `PeerId` do cliente B usando o protocolo de chat.
+    *   Para um chat em grupo, o cliente publica mensagens no tópico do grupo.
+5.  A comunicação flui através dos transportes configurados no `libp2p` (como WebRTC e WebSockets), com streams multiplexados e canais de comunicação criptografados.
 
 ---
 
@@ -34,38 +35,30 @@ Após o handshake inicial, toda a comunicação ocorre exclusivamente entre os d
 
 ### 3.1. Bibliotecas e Padrões
 
-* **libsodium.js** — biblioteca de criptografia de alto nível para:
+*   **`libp2p`**: Framework modular que compõe a stack de rede.
+*   **`@chainsafe/libp2p-noise`**: Implementação do protocolo de handshake de criptografia de canal [Noise](https://noiseprotocol.org/). Garante que todas as conexões entre pares sejam criptografadas, autenticadas e resistentes a tampering.
+*   **`@chainsafe/libp2p-yamux`**: Multiplexador de *streams* que permite que múltiplos fluxos de comunicação independentes ocorram sobre uma única conexão TCP ou WebRTC.
 
-  * Geração de pares de chave X25519.
-  * Derivação de chave de sessão segura (Diffie-Hellman).
-  * Criptografia simétrica com `crypto_secretbox_easy` (ChaCha20-Poly1305 ou AES-GCM).
-* **Web Crypto API** — suporte nativo complementar no navegador.
+### 3.2. Propriedades de Segurança
 
-### 3.2. Protocolo de Handshake
-
-* Cada cliente possui um par de chaves assimétricas persistido localmente.
-* Durante a conexão, pares efêmeros podem ser gerados para aumentar o sigilo (forward secrecy parcial).
-* O handshake ocorre diretamente entre os peers após a sinalização, derivando uma chave de sessão simétrica usada para cifrar todas as mensagens.
-
-### 3.3. Propriedades de Segurança
-
-* **End-to-End Encryption (E2EE)**: nenhum supernó tem acesso ao conteúdo.
-* **Autenticação mútua** via fingerprint da chave pública.
-* **Rekeying opcional** para renovação periódica de chaves de sessão.
-* **Zero retenção de dados**: nenhuma mensagem é armazenada em servidores.
+*   **Criptografia de Canal**: Todas as conexões são criptografadas de ponta a ponta entre os nós usando `libp2p-noise`. Isso impede que intermediários (incluindo nós de relay) leiam o conteúdo do tráfego.
+*   **Autenticação de Pares**: A identidade de cada par é verificada através de sua `PeerId` durante o handshake do Noise.
+*   **Resiliência a Falhas**: A natureza descentralizada do `libp2p` significa que a rede pode continuar a operar mesmo que alguns nós (exceto os de bootstrap, que são múltiplos) fiquem offline.
+*   **Zero Retenção de Dados**: Nenhuma mensagem é armazenada em servidores. A comunicação é efêmera e reside apenas nos dispositivos dos participantes.
 
 ---
 
 ## 4. Stack Tecnológica
 
-| Camada              | Tecnologia                  | Função                                |
-| ------------------- | --------------------------- | ------------------------------------- |
-| Frontend UI         | VueJS 3 + Vite              | SPA responsiva, componentes modulares |
-| Estilo              | Tailwind CSS                | Design e estilização ágil             |
-| Comunicação P2P     | WebRTC + simple-peer        | Canal de transporte direto            |
-| Criptografia        | libsodium.js                | Handshake e E2EE                      |
-| Sinalização         | WebSocket / HTTP (supernós) | Descoberta e conexão inicial          |
-| Armazenamento local | IndexedDB + localForage     | Chaves, contatos, preferências        |
+| Camada | Tecnologia | Função |
+| :--- | :--- | :--- |
+| **Frontend UI** | VueJS 3 + Vite | SPA responsiva, componentes modulares. |
+| **Estilo** | Tailwind CSS | Design e estilização ágil. |
+| **Comunicação P2P** | `libp2p` | Orquestra descoberta, transporte, criptografia e multiplexação. |
+| **Transportes P2P** | WebRTC, WebSockets | Camadas de transporte para comunicação no navegador. |
+| **Criptografia** | `libp2p-noise` | Handshake e criptografia de canal. |
+| **Descoberta** | Bootstrap, PubSub | Descoberta de outros pares na rede. |
+| **Armazenamento Local**| IndexedDB + localForage | Persistência de identidade e configurações. |
 
 ---
 
@@ -74,21 +67,21 @@ Após o handshake inicial, toda a comunicação ocorre exclusivamente entre os d
 ```
 src/
 ├─ components/
-│  ├─ ChatWindow.vue          // Interface de chat
-│  ├─ ContactList.vue         // Lista de usernames
-│  ├─ UsernameRegister.vue    // Registro e fingerprint
-│  └─ SupernodeControl.vue    // Interface de controle de supernó
+│  ├─ ChatWindow.vue
+│  ├─ ContactList.vue
+│  └─ UsernameRegister.vue
 │
 ├─ services/
-│  ├─ crypto.js               // Operações libsodium
-│  ├─ signaling.js            // Comunicação com supernós
-│  ├─ p2p.js                  // Sessão WebRTC
-│  └─ storage.js              // Persistência local
+│  ├─ crypto.js
+│  ├─ networkService.js  // Lógica principal do libp2p
+│  └─ storage.js
+│
+├─ stores/
+│  └─ network.js         // Estado da rede (Pinia)
 │
 ├─ views/
 │  ├─ LoginView.vue
-│  ├─ ChatView.vue
-│  └─ SettingsView.vue
+│  └─ ChatView.vue
 │
 ├─ App.vue
 └─ main.js
@@ -98,58 +91,57 @@ src/
 
 ## 6. Fluxo Operacional
 
-1. **Inicialização** — Geração de par de chaves local (X25519).
-2. **Registro de identidade** — Username + chave pública enviados ao supernó.
-3. **Descoberta** — Resolução de username → chave pública do destinatário.
-4. **Handshake** — Derivação de chave de sessão via libsodium.
-5. **Estabelecimento de canal P2P** — WebRTC DataChannel.
-6. **Troca de mensagens** — E2EE com chaves derivadas.
-7. **Encerramento** — Sessão termina sem deixar dados persistidos no servidor.
+1.  **Inicialização**: O usuário define um nome de usuário. O `networkService.js` inicializa um nó `libp2p`.
+2.  **Bootstrapping**: O nó se conecta aos `BOOTSTRAP_NODES` para descobrir a rede.
+3.  **Descoberta de Pares**: O nó se inscreve no tópico `PUBSUB_PEER_DISCOVERY_TOPIC` e começa a descobrir outros usuários.
+4.  **Anúncio de Presença**: O nó publica periodicamente uma mensagem de "online" no tópico de presença (`PRESENCE_TOPIC`), informando seu nome de usuário.
+5.  **Troca de Mensagens**:
+    *   **Direta**: Um *stream* é aberto para o `PeerId` do destinatário usando o `DIRECT_CHAT_PROTOCOL`. As mensagens são enviadas por este *stream* criptografado.
+    *   **Em Grupo**: As mensagens são publicadas no tópico do `gossipsub` correspondente ao grupo.
+6.  **Encerramento**: Ao fechar a aplicação, o nó `libp2p` é desligado, e uma mensagem "offline" pode ser enviada.
 
 ---
 
 ## 7. Considerações de Segurança
 
-* O supernó não tem acesso às mensagens ou às chaves de sessão.
-* O tráfego permanece cifrado em toda a rota de comunicação.
-* Os pares de chaves privados **nunca deixam o dispositivo** do usuário.
-* A comunicação é vulnerável apenas se um dos endpoints estiver comprometido (risco local, não estrutural).
-* A autenticação de usuários pode ser fortalecida com fingerprint ou QR code.
+*   O tráfego entre os nós é totalmente criptografado. Nós de relay ou bootstrap não podem inspecionar o conteúdo.
+*   A identidade é baseada na `PeerId` criptográfica, que é mais segura que usernames simples.
+*   A comunicação em grupo via `pubsub` não é criptografada de ponta a ponta por padrão no `gossipsub`. Embora o *transporte* seja criptografado, qualquer um inscrito no tópico pode ler as mensagens. Uma camada adicional de criptografia seria necessária para grupos seguros.
+*   A comunicação é vulnerável apenas se um dos endpoints estiver comprometido (risco local, não estrutural).
 
 ---
 
 ## 8. Roadmap Técnico (Versão Inicial)
 
-| Fase | Entrega Técnica                         | Componentes                        |
-| ---- | --------------------------------------- | ---------------------------------- |
-| 1    | Identidade e registro de usuário        | crypto.js, UsernameRegister.vue    |
-| 2    | Supernó funcional                       | signaling.js, SupernodeControl.vue |
-| 3    | Handshake criptográfico + WebRTC        | crypto.js, p2p.js                  |
-| 4    | Interface de chat segura                | ChatWindow.vue, ContactList.vue    |
-| 5    | Rekeying e melhorias de UX de segurança | crypto.js, ajustes de UI           |
+| Fase | Entrega Técnica | Status |
+| :--- | :--- | :--- |
+| 1 | Identidade e registro de usuário | ✅ Concluído |
+| 2 | Nó `libp2p` funcional com bootstrap | ✅ Concluído |
+| 3 | Descoberta de pares via PubSub | ✅ Concluído |
+| 4 | Interface de chat segura (direto e grupo) | ✅ Concluído |
+| 5 | Melhorias de UX e estabilidade | 🚧 Em andamento |
 
 ---
 
 ## 9. Extensões Futuras
 
-* Implementação do **Signal Protocol** completo (Double Ratchet).
-* Grupos com distribuição de chave compartilhada.
-* Uso de DHT (Distributed Hash Table) para eliminar supernós.
-* Mobile e desktop com sincronização segura.
-* Assinaturas verificáveis e reputação descentralizada.
+*   Implementação de criptografia E2EE para mensagens em grupo.
+*   Uso de DHT (Distributed Hash Table) para uma descoberta de pares mais robusta.
+*   Mobile e desktop com sincronização segura de identidade.
+*   Mecanismos de reputação e autenticação descentralizada (Web of Trust).
 
 ---
 
 ## 10. Resumo Técnico
 
-* **Modelo descentralizado** com supernós efêmeros.
-* **Criptografia ponta a ponta nativa** (libsodium + WebRTC).
-* **Zero armazenamento de mensagens** ou metadados persistentes.
-* **Identidade baseada em chaves públicas** e usernames resolvidos dinamicamente.
-* Arquitetura modular, expansível e de fácil manutenção.
+*   **Modelo descentralizado** com `libp2p`.
+*   **Criptografia de canal nativa** com `libp2p-noise`.
+*   **Zero armazenamento de mensagens** em servidores.
+*   **Identidade baseada em `PeerId`** e descoberta via PubSub.
+*   Arquitetura modular, expansível e de fácil manutenção.
 
 ---
 
-📅 **Data:** 18/10/2025
+📅 **Data:** 23/10/2025
 👨‍💻 **Responsável:** Equipe de Arquitetura e Desenvolvimento
-📜 **Versão:** 1.0 — Documento Técnico de Descrição
+📜 **Versão:** 2.0 — Documento Técnico de Descrição (Pós-libp2p)

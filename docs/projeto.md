@@ -1,24 +1,25 @@
 # 🛡️ Projeto Chat P2P Seguro — Descrição
 
-O **Chat P2P Seguro** é um projeto inovador que propõe uma nova forma de comunicação digital: **conversas criptografadas ponta a ponta, sem a dependência de um servidor central**. A aplicação utiliza um modelo de rede híbrida, combinando conexões diretas entre dispositivos com supernós voluntários para a descoberta temporária de usuários, garantindo privacidade, segurança e descentralização.
+O **Chat P2P Seguro** é um projeto inovador que propõe uma nova forma de comunicação digital: **conversas criptografadas, sem a dependência de um servidor central**. A aplicação utiliza o framework **`libp2p`** para construir uma rede totalmente descentralizada, combinando conexões diretas entre dispositivos com mecanismos automáticos de descoberta de pares, garantindo privacidade, segurança e resiliência.
 
-O sistema foi projetado para funcionar de forma simples para o usuário final e, ao mesmo tempo, robusta do ponto de vista técnico. Cada usuário gera localmente um par de chaves criptográficas, utilizado para autenticação e estabelecimento de conexões seguras. A comunicação acontece diretamente entre navegadores, utilizando **WebRTC** como camada de transporte e **libsodium** para criptografia avançada ponta a ponta, assegurando que nenhuma mensagem seja armazenada ou interceptada por intermediários.
+O sistema foi projetado para funcionar de forma simples para o usuário final e, ao mesmo tempo, robusta do ponto de vista técnico. Cada usuário é identificado por uma `PeerId` criptográfica, gerada localmente. A comunicação acontece diretamente entre navegadores, utilizando **WebRTC** como camada de transporte e **`libp2p-noise`** para criptografia de canal, assegurando que nenhuma mensagem em trânsito possa ser lida por intermediários.
 
-A descoberta de contatos é feita por meio de **usernames públicos**, resolvidos de forma efêmera por supernós — instâncias voluntárias que não armazenam dados sensíveis e expiram registros automaticamente. Assim, o supernó atua apenas como ponte de sinalização inicial, desaparecendo completamente da rota após o handshake seguro.
+A descoberta de contatos é feita de forma automática. Ao se conectar à rede através de **nós de bootstrap** públicos, o aplicativo utiliza o protocolo **PubSub (`gossipsub`)** para encontrar outros usuários online. Isso elimina a necessidade de servidores centrais ou de coordenação manual.
 
-A interface do sistema é desenvolvida com **VueJS** e **Tailwind CSS**, priorizando leveza, responsividade e facilidade de uso. A arquitetura modular facilita a expansão futura para recursos avançados, como grupos com criptografia compartilhada, autenticação descentralizada e integração com redes federadas.
+A interface do sistema é desenvolvida com **VueJS** e **Tailwind CSS**, priorizando leveza, responsividade e facilidade de uso. A arquitetura modular do `libp2p` facilita a expansão futura para recursos avançados, como grupos com criptografia E2EE, descoberta via DHT e integração com outras redes P2P.
 
 ## ✨ Características principais
 
-* 🔐 **Criptografia ponta a ponta real** com libsodium.
-* 🌐 **Rede descentralizada** com supernós voluntários.
-* 👤 Descoberta de usuários via username.
-* 💬 Comunicação direta P2P com WebRTC.
-* 🧭 Interface moderna e responsiva em VueJS + Tailwind.
-* 🕒 Nenhuma mensagem é armazenada — comunicação efêmera.
-* 🔁 Estrutura preparada para evolução futura com protocolos avançados.
+*   🔐 **Criptografia de Canal** com `libp2p-noise`.
+*   🌐 **Rede Descentralizada** com `libp2p`, usando nós de bootstrap públicos.
+*   👤 Descoberta automática de usuários via **PubSub**.
+*   💬 Comunicação direta P2P com **WebRTC**.
+*   🧭 Interface moderna e responsiva em VueJS + Tailwind.
+*   🕒 Nenhuma mensagem é armazenada — comunicação efêmera.
+*   🔁 Estrutura preparada para evolução futura com protocolos avançados.
 
 ## 🧠 Proposta de valor
 
 Em um cenário global de crescente preocupação com vigilância, coleta de dados e concentração de informações em servidores centrais, o Chat P2P Seguro oferece uma alternativa independente, privada e transparente.
+
 A segurança não é um recurso adicional: **é o núcleo da aplicação**.

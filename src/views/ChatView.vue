@@ -61,7 +61,8 @@ const networkStore = useNetworkStore();
 const identity = ref(null);
 const username = computed(() => identity.value?.username);
 const myFingerprint = ref('');
-const onlineUsers = computed(() => networkStore.onlineUsers);
+
+const onlineUsers = computed(() => networkStore.onlineUsersList);
 const isLoadingUsers = computed(() => networkStore.status === 'connecting' && onlineUsers.value.length === 0);
 
 const activeChat = computed(() => networkStore.activeChat);
