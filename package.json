@@ -30,6 +30,7 @@
     "@libp2p/webrtc": "^6.0.6",
     "@libp2p/websockets": "^10.0.6",
     "@libp2p/webtransport": "^6.0.7",
+    "@multiformats/multiaddr": "^13.0.1",
     "@tailwindcss/vite": "^4.1.14",
     "autoprefixer": "^10.4.21",
     "it-first": "^3.0.9",
