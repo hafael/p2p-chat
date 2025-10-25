@@ -5,7 +5,7 @@
 Este projeto visa desenvolver um **protótipo funcional de um aplicativo de chat seguro e descentralizado**, com:
 
 *   Comunicação **direta entre dispositivos** (P2P) gerenciada por `libp2p`;
-*   **Descoberta de usuários via PubSub**;
+*   **Descoberta de usuários por busca e solicitação de contato**;
 *   Uso de **nós de bootstrap públicos** para entrada na rede;
 *   **Criptografia de canal** com `libp2p-noise`;
 *   Interface moderna em **VueJS + Tailwind**;
@@ -34,14 +34,20 @@ A proposta de valor central é **“segurança forte e descentralização”**.
 
 ### Identidade
 
-*   Cada usuário é representado por uma **`PeerId`** do `libp2p`, gerada a partir de um par de chaves criptográficas na primeira inicialização.
-*   A `PeerId` é a identidade única e verificável do usuário na rede.
-*   Um nome de usuário (username) é associado a essa `PeerId` para facilitar a identificação.
+*   **Escolha de Username**: Ao iniciar, o usuário escolhe um nome de usuário (username).
+*   **Criação ou Autenticação**:
+    *   **Nova Conta**: Se o username estiver disponível, o usuário pode criar uma nova identidade, gerando um novo par de chaves criptográficas (`PeerId`).
+    *   **Autenticação**: Se o usuário já possui uma identidade, ele pode se autenticar fornecendo sua chave privada.
+*   **Chave de Usuário**: Após a autenticação, o usuário pode baixar sua chave privada, que o identifica de forma única na rede P2P. Essa chave permite a portabilidade da identidade entre dispositivos.
+*   **Perfil de Usuário**: Além do username, o usuário pode associar à sua identidade um **nome de exibição** e uma **imagem de avatar**.
 
 ### Descoberta
 
-*   Os usuários anunciam sua presença (username e `PeerId`) em um tópico de `gossipsub` (PubSub).
-*   Outros clientes, inscritos no mesmo tópico, recebem esses anúncios e populam a lista de contatos online.
+*   **Busca por Username**: Um usuário "A" pode buscar por um usuário "B" diretamente em sua interface, utilizando o username de "B".
+*   **Solicitação de Contato**: Ao encontrar "B", "A" envia uma solicitação de contato. Essa solicitação é enviada por um canal seguro.
+*   **Aceitação de Contato**: O usuário "B" recebe a solicitação e pode aceitá-la ou recusá-la. Ao aceitar, "A" é adicionado à lista de contatos de "B" e vice-versa.
+*   **Comunicação Restrita a Contatos**: Um usuário só pode ver e se comunicar com os usuários que estão em sua lista de contatos. Qualquer tentativa de comunicação de um usuário não autorizado é bloqueada.
+*   **Descoberta em Grupo**: Dentro de um tópico de grupo, os usuários podem visualizar a lista de membros. A partir dessa lista, um usuário pode iniciar uma solicitação de contato direto com outro membro do grupo.
 
 ---
 
@@ -108,11 +114,21 @@ src/
 
 ## ⚙️ 8. Fluxo de Operação
 
-1.  **Identidade**: Usuário abre o app, `networkService.js` gera ou carrega uma `PeerId`.
+1.  **Identidade e Autenticação**: 
+    *   O usuário abre o app e escolhe um **username**.
+    *   O sistema verifica a disponibilidade do username.
+    *   O usuário pode **criar uma nova identidade** (gerando uma `PeerId`) ou **autenticar-se com uma chave existente**.
+    *   Opcionalmente, o usuário define seu **nome de exibição** e **avatar**.
+    *   O `networkService.js` carrega ou gera a `PeerId`.
 2.  **Conexão**: O nó `libp2p` se conecta aos nós de bootstrap.
-3.  **Descoberta**: O nó se inscreve nos tópicos de descoberta e presença via `gossipsub`.
-4.  **Chat**: Usuários online aparecem na lista. Clicar em um usuário abre um *stream* direto e criptografado para chat 1-para-1.
-5.  **Grupos**: Criar um grupo significa criar um novo tópico no `gossipsub`. Mensagens são publicadas nesse tópico.
+3.  **Busca e Adição de Contatos**:
+    *   **Busca Direta**: O usuário A busca pelo username do usuário B.
+    *   **Solicitação**: O usuário A envia uma solicitação de contato para B.
+    *   **Aceitação**: O usuário B aceita a solicitação. Agora A e B são contatos.
+4.  **Início do Chat**: Apenas com o contato estabelecido, um *stream* direto e criptografado pode ser aberto para a conversa. A interface exibe apenas os contatos que foram mutuamente aceitos.
+5.  **Grupos e Descoberta em Grupo**:
+    *   Um usuário pode entrar em um grupo (tópico `gossipsub`).
+    *   Dentro do grupo, ele pode ver a lista de membros e iniciar solicitações de contato direto.
 
 ---
 
@@ -122,7 +138,9 @@ src/
 | :--- | :--- |
 | **Criptografia de Canal** | `libp2p-noise` |
 | **Autenticação** | `PeerId` (par de chaves criptográficas) |
+| **Identidade Portátil com Chave** | Download da chave privada do usuário. |
 | **Descoberta Segura** | A descoberta não expõe dados, apenas `PeerId`s. |
+| **Comunicação Restrita a Contatos** | Validação de conexões recebidas contra a lista de contatos (firewall de aplicação). |
 | **Armazenamento Local Seguro** | A chave privada da `PeerId` nunca sai do dispositivo. |
 | **Zero Armazenamento de Mensagens** | Tudo trafega e vive somente nos dispositivos. |
 
@@ -134,9 +152,11 @@ src/
 | :--- | :--- | :--- |
 | 1 | **Identidade e UI Inicial** | ✅ Concluído |
 | 2 | **Nó `libp2p` com Bootstrap** | ✅ Concluído |
-| 3 | **Descoberta de Pares e Presença com PubSub** | ✅ Concluído |
+| 3 | **Descoberta de Pares por Anúncio de Presença (PubSub)** | ✅ Concluído |
 | 4 | **Chat Funcional (Direto e Grupo)** | ✅ Concluído |
-| 5 | **Melhorias e Refatoração** | 🚧 Em andamento |
+| 5 | **Gerenciamento de Identidade e Perfil** | 🚧 Em andamento |
+| 6 | **Descoberta de Pares por Busca e Solicitação** | 🚧 Em andamento |
+| 7 | **Melhorias de UX e Estabilidade** | 🚧 Em andamento |
 
 ---
 
@@ -144,6 +164,7 @@ src/
 
 *   🚀 Implementar **criptografia E2EE para mensagens em grupo**, já que o `gossipsub` por si só não garante isso.
 *   🌐 Implementar descoberta por **DHT (Kademlia)** para maior descentralização, reduzindo a dependência dos nós de bootstrap.
+*   🖼️ **Perfis de Usuário Editáveis e Descentralizados**: Permitir que os usuários atualizem suas informações de perfil (nome, avatar), que seriam propagadas pela rede de forma segura.
 *   📱 Aplicativo mobile com mesmo modelo de segurança (usando `libp2p` em Go ou Rust com bindings).
 *   🧪 Mecanismos de reputação e autenticação descentralizada (Web of Trust).
 
@@ -163,7 +184,7 @@ src/
 *   ✅ **`libp2p-noise`** como base da criptografia de canal.
 *   ✅ Comunicação via múltiplos transportes (`WebRTC`, `WebSockets`).
 *   ✅ **VueJS + Tailwind** para a interface.
-*   ✅ Descoberta de pares e presença via **PubSub (`gossipsub`)**.
+*   ✅ Descoberta de pares por **busca e solicitação de contato**.
 *   ✅ Foco em **segurança e descentralização como diferencial competitivo**.
 
 ---

@@ -61,6 +61,32 @@ export async function decryptMessage(ciphertext, nonce, sharedKey) {
 }
 
 /**
+ * Exports a key to a base64 string for portability.
+ * @param {Uint8Array} key - The key to export.
+ * @returns {Promise<string>} - The base64 representation of the key.
+ */
+export async function exportKeyToString(key) {
+  await sodium.ready;
+  return sodium.to_base64(key, sodium.base64_variants.ORIGINAL);
+}
+
+/**
+ * Imports a key from a base64 string.
+ * @param {string} keyString - The base64 representation of the key.
+ * @returns {Promise<{publicKey: Uint8Array, privateKey: Uint8Array}>} - The full key pair.
+ */
+export async function importKeyFromString(keyString) {
+  await sodium.ready;
+  const privateKey = sodium.from_base64(keyString, sodium.base64_variants.ORIGINAL);
+  
+  // Regenerate the public key from the private key
+  const { publicKey } = sodium.crypto_box_keypair_from_secretkey(privateKey);
+
+  return { publicKey, privateKey };
+}
+
+
+/**
  * Generates a human-readable fingerprint from a public key.
  * Uses a cryptographic hash (BLAKE2b) and formats it for easy visual comparison.
  * @param {Uint8Array} publicKey - The public key to process.

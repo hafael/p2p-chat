@@ -3,211 +3,116 @@ import { defineStore } from 'pinia';
 import * as networkService from '../services/networkService';
 
 export const useNetworkStore = defineStore('network', {
-  state: () => ({
-    // General network connection status: 'disconnected', 'connecting', 'connected'
+  state: () => ({ // Add isOffline state
+    isOffline: false,
     status: 'disconnected',
-    // The PeerId of the local user, once connected.
     peerId: null,
-    // A map of online users for efficient lookups. { [peerId]: { id, username } }
-    onlineUsers: {},
-    // Stores direct (1-to-1) chat sessions. { [peerId]: { messages: [], status, ... } }
+    contacts: [],
+    contactRequests: [],
     directChats: {},
-    // Stores group chat sessions. { [groupId]: { id, name, adminId, members: [], messages: [] } }
     groups: {},
-    // The ID of the currently active chat (can be a peerId or a groupId).
     activeChatId: null,
-    // The type of the currently active chat: 'direct' or 'group'.
-    activeChatType: null,
+    activeChatType: null, // 'direct' or 'group'
+    peerCount: 0,
   }),
 
   getters: {
-    /**
-     * Returns the list of online users as an array, excluding the current user.
-     */
-    onlineUsersList: (state) => {
-      return Object.values(state.onlineUsers).filter(user => user.id !== state.peerId);
-    },
-
-    /**
-     * Returns the currently active chat object (either a direct chat or a group).
-     */
     activeChat: (state) => {
-      if (!state.activeChatId || !state.activeChatType) {
-        return null;
-      }
+      if (!state.activeChatId || !state.activeChatType) return null;
+
       if (state.activeChatType === 'direct') {
-        return state.directChats[state.activeChatId];
+        const contact = state.contacts.find(c => c.peerId === state.activeChatId);
+        const chatHistory = state.directChats[state.activeChatId];
+        return { contact, ...chatHistory, type: 'direct' };
+      } else {
+        const group = state.groups[state.activeChatId];
+        return { ...group, type: 'group' };
       }
-      if (state.activeChatType === 'group') {
-        return state.groups[state.activeChatId];
-      }
-      return null;
     },
   },
 
   actions: {
-    // --- Actions called by UI components ---
-
-    /**
-     * Initializes the network service.
-     * @param {object} identity - User's identity.
-     */
-    initialize(identity) {
-      networkService.initialize(identity);
+    // --- UI Actions ---
+    initialize(identity) { networkService.initialize(identity); },
+    shutdown() { networkService.shutdown(); },
+    findUserByUsername(username) { return networkService.findUser(username); },
+    sendContactRequest(peerId) { networkService.sendContactRequest(peerId); },
+    respondToContactRequest(peerId, accepted) {
+      networkService.respondToContactRequest(peerId, accepted);
+      this.contactRequests = this.contactRequests.filter(req => req.peerId !== peerId);
     },
 
-    /**
-     * Shuts down the network service gracefully.
-     */
-    shutdown() {
-      networkService.shutdown();
-    },
-
-    /**
-     * Sets the currently active chat window.
-     * @param {string} chatId - The ID of the chat (peerId or groupId).
-     * @param {'direct' | 'group'} chatType - The type of chat.
-     */
     setActiveChat(chatId, chatType) {
       if (chatType === 'direct' && !this.directChats[chatId]) {
-        // Automatically create a local chat instance when a user is clicked
-        const user = this.onlineUsers[chatId];
-        if (user) {
-          this.directChats[chatId] = {
-            contactId: user.id,
-            contactUsername: user.username,
-            messages: [],
-            status: 'new', // Represents a new, unopened chat
-          };
-          // Initiate the connection
-          networkService.startDirectChat(chatId);
-        }
+        this.directChats[chatId] = { messages: [] };
+        networkService.ensureConnection(chatId);
       }
       this.activeChatId = chatId;
       this.activeChatType = chatType;
     },
 
-    /**
-     * Sends a direct message and adds it optimistically to the local state.
-     * @param {string} peerId - The recipient's peerId.
-     * @param {string} text - The message content.
-     */
-    sendDirectMessage(peerId, text) {
-        if (!this.directChats[peerId]) return;
-        const message = { text, sender: 'me', timestamp: Date.now() };
-        this.directChats[peerId].messages.push(message);
-        networkService.sendDirectMessage(peerId, text);
-    },
-    
-    /**
-     * Creates a new group chat.
-     * @param {string} groupName - The name for the new group.
-     */
-    createGroup(groupName) {
-        networkService.createGroup(groupName);
-    },
-
-    /**
-     * Sends a group message and adds it optimistically to the local state.
-     * @param {string} groupId - The group's ID.
-     * @param {string} text - The message content.
-     */
-    sendGroupMessage(groupId, text) {
-      if (!this.groups[groupId]) return;
-      const message = {
-        text,
-        senderId: this.peerId,
-        senderUsername: 'Me', // Simplified for local display
-        timestamp: Date.now(),
-      };
-      this.groups[groupId].messages.push(message);
-      networkService.sendGroupMessage(groupId, text);
-    },
-
-    // --- Group Admin Actions ---
-    addUserToGroup: networkService.addUserToGroup,
-    removeUserFromGroup: networkService.removeUserFromGroup,
-    clearGroupMessages: networkService.clearGroupMessages,
-    deleteGroup: networkService.deleteGroup,
-
-
-    // --- Internal Actions (called by networkService to sync state) ---
-
-    _setConnectionStatus(status) {
-      this.status = status;
-    },
-
-    _setPeerId(peerId) {
-        this.peerId = peerId;
-    },
-
-    _addOnlineUser(user) {
-      if (user.id !== this.peerId) {
-        this.onlineUsers[user.id] = user;
+    sendMessage(text) {
+      if (!this.activeChatId) return;
+      const message = { text, sender: 'me', timestamp: Date.now() };
+      if (this.activeChatType === 'direct') {
+        this.directChats[this.activeChatId].messages.push(message);
+        networkService.sendMessage(this.activeChatId, text);
+      } else {
+        networkService.sendGroupMessage(this.activeChatId, text);
       }
     },
 
-    _removeOnlineUser(peerId) {
-      delete this.onlineUsers[peerId];
-    },
-    
-    _setChatStatus(peerId, status) {
-        if (this.directChats[peerId]) {
-            this.directChats[peerId].status = status;
-        }
+    createGroup(groupName) {
+      networkService.createGroup(groupName);
     },
 
+    updateProfile(identity) {
+      // TODO: Broadcast profile update to contacts
+    },
+
+    setOfflineStatus(isOffline) {
+      this.isOffline = isOffline;
+    },
+
+    // --- Internal Actions ---
+    _setConnectionStatus(status) { this.status = status; },
+    _setPeerId(peerId) { this.peerId = peerId; },
+    _addContact(contact) {
+      if (!this.contacts.some(c => c.peerId === contact.peerId)) {
+        this.contacts.push({ ...contact, isOnline: true });
+      }
+    },
+    _removeContact(peerId) {
+      this.contacts = this.contacts.filter(c => c.peerId !== peerId);
+      if (this.activeChatId === peerId && this.activeChatType === 'direct') {
+        this.activeChatId = null;
+      }
+    },
+    _setContactOnlineStatus(peerId, isOnline) {
+      const contact = this.contacts.find(c => c.peerId === peerId);
+      if (contact) contact.isOnline = isOnline;
+    },
+    _addContactRequest(request) {
+      if (!this.contactRequests.some(r => r.peerId === request.peerId)) {
+        this.contactRequests.push(request);
+      }
+    },
     _addDirectMessage(peerId, message) {
-        // Ensure chat exists before adding a message
-        if (!this.directChats[peerId]) {
-            const user = this.onlineUsers[peerId];
-            this.directChats[peerId] = {
-                contactId: peerId,
-                contactUsername: user ? user.username : 'Unknown',
-                messages: [],
-                status: 'connected',
-            };
-        }
-        this.directChats[peerId].messages.push(message);
+      if (!this.directChats[peerId]) {
+        this.directChats[peerId] = { messages: [] };
+      }
+      this.directChats[peerId].messages.push(message);
     },
-
     _addGroup(group) {
-        this.groups[group.id] = {
-            messages: [],
-            ...group,
-        };
+      if (!this.groups[group.id]) {
+        this.groups[group.id] = { messages: [], members: [], ...group };
+      }
     },
-    
-    _removeGroup(groupId) {
-        if (this.activeChatId === groupId) {
-            this.activeChatId = null;
-            this.activeChatType = null;
-        }
-        delete this.groups[groupId];
-    },
-
+    _setPeerCount(count) { this.peerCount = count; },
     _addMessageToGroup(groupId, message) {
-        if (this.groups[groupId]) {
-            this.groups[groupId].messages.push(message);
-        }
+      if (this.groups[groupId]) {
+        this.groups[groupId].messages.push(message);
+      }
     },
-
-    _addUserToGroup(groupId, user) {
-        if (this.groups[groupId] && !this.groups[groupId].members.some(m => m.id === user.id)) {
-            this.groups[groupId].members.push(user);
-        }
-    },
-
-    _removeUserFromGroup(groupId, userId) {
-        if (this.groups[groupId]) {
-            this.groups[groupId].members = this.groups[groupId].members.filter(m => m.id !== userId);
-        }
-    },
-
-    _clearGroupMessages(groupId) {
-        if (this.groups[groupId]) {
-            this.groups[groupId].messages = [];
-        }
-    }
   },
 });

@@ -11,16 +11,17 @@ localforage.config({
 const IDENTITY_KEY = 'user_identity';
 
 /**
- * Saves the complete user identity (username, keys) to local storage.
- * Keys are stored as Uint8Array.
+ * Saves the complete user identity (profile, keys) to local storage.
  * @param {object} identity
  * @param {string} identity.username
+ * @param {string} identity.displayName
+ * @param {string} identity.avatarUrl
  * @param {Uint8Array} identity.publicKey
  * @param {Uint8Array} identity.privateKey
+ * @param {string} identity.privateKeyString - The portable string representation of the private key.
  * @returns {Promise<object>} - The identity that was saved.
  */
-export async function saveIdentity({ username, publicKey, privateKey }) {
-  const identity = { username, publicKey, privateKey };
+export async function saveIdentity(identity) {
   return localforage.setItem(IDENTITY_KEY, identity);
 }
 

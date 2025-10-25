@@ -12,7 +12,9 @@ A interface do sistema é desenvolvida com **VueJS** e **Tailwind CSS**, prioriz
 
 *   🔐 **Criptografia de Canal** com `libp2p-noise`.
 *   🌐 **Rede Descentralizada** com `libp2p`, usando nós de bootstrap públicos.
-*   👤 Descoberta automática de usuários via **PubSub**.
+*   👤 **Identidade portátil com chaves criptográficas e gestão de perfil**.
+*   🖼️ **Perfil de usuário com nome e avatar**.
+*   🕵️ **Descoberta de usuários por busca e solicitação de contato**.
 *   💬 Comunicação direta P2P com **WebRTC**.
 *   🧭 Interface moderna e responsiva em VueJS + Tailwind.
 *   🕒 Nenhuma mensagem é armazenada — comunicação efêmera.

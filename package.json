@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@chainsafe/libp2p-gossipsub": "^14.1.2",
     "@chainsafe/libp2p-noise": "^17.0.0",
     "@chainsafe/libp2p-yamux": "^8.0.1",
     "@headlessui/vue": "^1.7.23",
@@ -24,6 +25,7 @@
     "@libp2p/kad-dht": "^16.0.5",
     "@libp2p/mdns": "^12.0.6",
     "@libp2p/mplex": "^12.0.6",
+    "@libp2p/ping": "^3.0.6",
     "@libp2p/pubsub": "^10.1.18",
     "@libp2p/pubsub-peer-discovery": "^12.0.0",
     "@libp2p/tcp": "^11.0.5",
@@ -35,7 +37,7 @@
     "autoprefixer": "^10.4.21",
     "it-first": "^3.0.9",
     "it-pipe": "^3.0.1",
-    "libp2p": "^3.0.6",
+    "libp2p": "^3.0.7",
     "libsodium-wrappers": "^0.7.15",
     "localforage": "^1.10.0",
     "pinia": "^3.0.3",
@@ -46,7 +48,7 @@
     "vue-router": "^4.6.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.14",
+    "@tailwindcss/postcss": "^4.1.16",
     "@vitejs/plugin-vue": "^6.0.1",
     "tailwindcss": "^4.1.14",
     "vite": "^7.1.7",
