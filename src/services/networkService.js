@@ -7,6 +7,7 @@ import { identify } from '@libp2p/identify';
 import { yamux } from '@chainsafe/libp2p-yamux';
 import { noise } from '@chainsafe/libp2p-noise';
 import { gossipsub } from '@chainsafe/libp2p-gossipsub';
+import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
 import { webRTC } from '@libp2p/webrtc';
 import { webSockets } from '@libp2p/websockets';
 import { ping } from '@libp2p/ping';
@@ -44,11 +45,17 @@ export async function initialize(identity) {
       transports: [webSockets(), webRTC(), circuitRelayTransport({ discoverRelays: 1 })],
       connectionEncryption: [noise()],
       streamMuxers: [yamux()],
-      peerDiscovery: [bootstrap({ list: BOOTSTRAP_MULTIADDRS })],
+      peerDiscovery: [
+        bootstrap({ list: BOOTSTRAP_MULTIADDRS }),
+        pubsubPeerDiscovery({
+          interval: 1000, // Every second
+          topics: [USER_DISCOVERY_TOPIC]
+        })
+      ],
       services: {
         identify: identify(),
         ping: ping(),
-        pubsub: gossipsub({ allowPublishToZeroPeers: false }),
+        pubsub: gossipsub({ allowPublishToZeroPeers: true }),
       },
     });
 

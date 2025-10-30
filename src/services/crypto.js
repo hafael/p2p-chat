@@ -80,7 +80,7 @@ export async function importKeyFromString(keyString) {
   const privateKey = sodium.from_base64(keyString, sodium.base64_variants.ORIGINAL);
   
   // Regenerate the public key from the private key
-  const { publicKey } = sodium.crypto_box_keypair_from_secretkey(privateKey);
+  const publicKey = sodium.crypto_scalarmult_base(privateKey);
 
   return { publicKey, privateKey };
 }
